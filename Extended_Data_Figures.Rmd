@@ -1,0 +1,421 @@
+---
+title: "Extended_Data_Figures"
+author: "QD"
+date: "2024-04-24"
+output: html_document
+---
+
+## Extended Data Figure 1
+```{r}
+Mesnage_2023_before_after_long <- psmelt(Mesnage_2023_tax_ps_rel_abun_before_after)
+Mesnage_2023_before_after_long_Akkermansia_muciniphila <- Mesnage_2023_before_after_long %>% filter(str_detect(OTU, "ref_mOTU_v31_03591"))
+
+## Take p-value from the differential abundance analyses, p = 0.10
+
+Mesnage_2023_before_after_long_Akkermansia_muciniphila <-  Mesnage_2023_before_after_long_Akkermansia_muciniphila %>%
+arrange(Study_Patient, Timepoint)
+
+## Akkermansia boxplots.
+A_muciniphila_Mesnage_figure <- ggplot(Mesnage_2023_before_after_long_Akkermansia_muciniphila) +
+  theme_publication() +
+  geom_boxplot(data = Mesnage_2023_before_after_long_Akkermansia_muciniphila, aes(x = Timepoint, y = log10(Abundance + 1e-4), fill = Timepoint), outlier.shape = NA) +
+  geom_point(data = Mesnage_2023_before_after_long_Akkermansia_muciniphila, aes(x = Timepoint, y = log10(Abundance + 1e-4)), size = 0.2, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  geom_line(data = Mesnage_2023_before_after_long_Akkermansia_muciniphila, aes(x = Timepoint, y = log10(Abundance + 1e-4), group = Study_Patient), linetype = "11", linewidth = 0.3, alpha = 0.4, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  #stat_pvalue_manual(wilcox_results_df %>% filter(Clinical_Marker == "Glucose"), label = "p.signif", color = "black") + 
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank(), legend.position = "none") +
+  scale_fill_manual(values=c('#366eb2','#bc3f60')) +
+  ylab("A. muciniphila [r03591] relative abundance (log10)") +
+  ggtitle("Current study")
+
+## Now also make this plot for Maifeld, p = 0.98 there.
+Maifeld_2021_before_after_Akkermansia <- Maifeld_2021_tax_ps_rel_abun %>% ps_filter(Visit == "V1" | Visit == "V2")
+Maifeld_2021_before_after_Akkermansia_long <- psmelt(Maifeld_2021_before_after_Akkermansia)
+Maifeld_2021_before_after_long_Akkermansia_muciniphila <- Maifeld_2021_before_after_Akkermansia_long %>% filter(str_detect(OTU, "ref_mOTU_v31_03591"))
+
+Maifeld_2021_before_after_long_Akkermansia_muciniphila <-  Maifeld_2021_before_after_long_Akkermansia_muciniphila %>%
+arrange(host_subject_id, Visit)
+
+## Akkermansia boxplots.
+A_muciniphila_Maifeld_figure <- ggplot(Maifeld_2021_before_after_long_Akkermansia_muciniphila) +
+  theme_publication() +
+  geom_boxplot(data = Maifeld_2021_before_after_long_Akkermansia_muciniphila, aes(x = Visit, y = log10(Abundance + 1e-4), fill = Visit), outlier.shape = NA) +
+  geom_point(data = Maifeld_2021_before_after_long_Akkermansia_muciniphila, aes(x = Visit, y = log10(Abundance + 1e-4)), size = 0.2, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  geom_line(data = Maifeld_2021_before_after_long_Akkermansia_muciniphila, aes(x = Visit, y = log10(Abundance + 1e-4), group = host_subject_id), linetype = "11", linewidth = 0.3, alpha = 0.4, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  #stat_pvalue_manual(wilcox_results_df %>% filter(Clinical_Marker == "Glucose"), label = "p.signif", color = "black") + 
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank(), legend.position = "none") +
+  scale_fill_manual(values=c('#366eb2','#bc3f60')) +
+  ylab("") +
+  ggtitle("Maifeld 2021")
+
+Extended_Data_Fig1 <- A_muciniphila_Mesnage_figure + A_muciniphila_Maifeld_figure
+```
+
+## Extended Data Figure 2
+```{r}
+urease_KOs <- c("K03190", "K01430", "K01429", "K01428", "K01387", "K03188", "K03189") 
+ko_Mesnage_2023_urease <- psmelt(ko_Mesnage_2023_ps) %>% filter(OTU %in% urease_KOs) %>% filter(Timepoint == "Before" | Timepoint == "After")
+
+## Label the KOs with the respective gene names as in 3F of the nirtogen recycling in squirrels paper.
+correct_KO_order <- c("K03190", "K01430", "K01429", "K01428", "K01387", "K03188", "K03189")
+
+threshold <- 0.001
+
+## Calculate DA for all KOs
+label.Mesnage_2023_before_after_ko <- create.label(meta = sample_data(ko_Mesnage_2023_ps_before_after), label='Timepoint', case = "After")
+siamcat_Mesnage_2023_before_after_ko <- siamcat(phyloseq = ko_Mesnage_2023_ps_before_after, label = label.Mesnage_2023_before_after_ko)
+show(siamcat_Mesnage_2023_before_after_ko)
+siamcat_Mesnage_2023_before_after_ko <- filter.features(siamcat_Mesnage_2023_before_after_ko, filter.method = 'prevalence', cutoff = 0.1)
+siamcat_Mesnage_2023_before_after_ko <- filter.features(siamcat_Mesnage_2023_before_after_ko, filter.method = 'abundance', cutoff = 1e-5, feature.type = "filtered")
+siamcat_Mesnage_2023_before_after_ko <- normalize.features(siamcat_Mesnage_2023_before_after_ko, norm.method = "log.std", norm.param = list(log.n0 = 1e-8, sd.min.q = 0.0))
+
+## Fit a random intercept per patient
+siamcat_Mesnage_2023_before_after_ko <- check.associations(siamcat_Mesnage_2023_before_after_ko, formula = "feat ~ label + (1|Study_Patient)", test = "lm", feature.type = "normalized")
+
+siamcat_Mesnage_2023_before_after_ko_assocations <- associations(siamcat_Mesnage_2023_before_after_ko)
+siamcat_Mesnage_2023_before_after_ko_assocations$ko <- rownames(siamcat_Mesnage_2023_before_after_ko_assocations)
+
+
+p_values_urease_KOs <- siamcat_Mesnage_2023_before_after_ko_assocations %>% filter(ko %in% correct_KO_order) %>% select(p.adj, ko) %>% mutate(group2 = "After") %>% mutate(group1 = "Before") %>% rename("OTU" = ko) %>% select(2,4,3,1) %>% mutate(x = 1:7) %>% mutate(OTU = factor(OTU)) %>% mutate(p.adj = ifelse(p.adj < threshold, format(p.adj, scientific = TRUE, digits = 2), sprintf("%.3f", p.adj)))
+
+ko_Mesnage_2023_urease_plot <- ggplot(ko_Mesnage_2023_urease %>% mutate(Abundance = Abundance + 1e-7)) +
+  theme_publication() + 
+  aes(x = factor(OTU, level = correct_KO_order), y = log10(Abundance), fill = Timepoint) + 
+  geom_boxplot(outlier.alpha = 0.2) +
+  scale_fill_manual(values = c("#366eb2","#bc3f60")) +
+  geom_text(data = p_values_urease_KOs, aes(x = OTU, y = -3.7, label = p.adj), size = 2 ,inherit.aes = F) +
+  ylab("Relative abundance (log10)") +
+  xlab("")
+```
+
+## Extended Data Figure 3a
+```{r}
+ref_motus_mapping <- read_delim(here("Other_Required_Data","db_mOTU_taxonomy_meta-mOTUs.tsv"), col_names = TRUE) 
+meta_motus_mapping <- read_delim(here("Other_Required_Data","db_mOTU_taxonomy_ref-mOTUs.tsv"), col_names = TRUE)
+meta_motus_mapping <- meta_motus_mapping %>% select(-1) %>% dplyr::rename("motus_identifier" = 1)
+ref_motus_mapping <- ref_motus_mapping %>% dplyr::rename("motus_identifier" = 1)
+motus_mapping <- full_join(ref_motus_mapping, meta_motus_mapping)
+
+## Put all these known IPA-producers into a vector and add the 4 Oscilli species as well at the end.
+ipa_motus_of_interest <- c("ref_mOTU_v31_01616", "ref_mOTU_v31_06790", "ref_mOTU_v31_03296", "ref_mOTU_v31_04457", "ref_mOTU_v31_04464", "ref_mOTU_v31_03804", "ref_mOTU_v31_04465", "ref_mOTU_v31_03805", "ref_mOTU_v31_06376", "ref_mOTU_v31_10692", "ref_mOTU_v31_01077", "ref_mOTU_v31_03281", "ref_mOTU_v31_06444", "ref_mOTU_v31_04664", "meta_mOTU_v31_12610", "ext_mOTU_v31_18233", "meta_mOTU_v31_12282")
+
+ipa_motus_of_interest_taxonomic_mappings <- motus_mapping %>% filter(motus_identifier %in% ipa_motus_of_interest)
+
+## Now prepare datasets accordingly to get relevant Oscilli abundances out
+Zeevi_2015_ipa_producers_long <- psmelt(Zeevi_2015_tax_ps_rel_abun) %>% select(OTU, Sample, Abundance, Genus, Species, mOTU_number) %>% filter(mOTU_number %in% ipa_motus_of_interest) %>% mutate(Study = "Zeevi_2015")
+
+motus_not_observed <- setdiff(ipa_motus_of_interest, unique(Zeevi_2015_ipa_producers_long$mOTU_number))
+ipa_motus_of_interest_taxonomic_mappings_Zeevi_to_add <- ipa_motus_of_interest_taxonomic_mappings %>% filter(motus_identifier %in% motus_not_observed)
+
+Zeevi_2015_ipa_producer_mock <- Zeevi_2015_ipa_producers_long %>% filter(mOTU_number == "meta_mOTU_v31_12610")
+
+Zeevi_rows_to_be_added <- data.frame()
+
+## Can add abundance of 0 to all mOTUs that are never observed anyway.
+for (motu_to_add in ipa_motus_of_interest_taxonomic_mappings_Zeevi_to_add$motus_identifier){
+  tax_info_motu_to_add <- ipa_motus_of_interest_taxonomic_mappings_Zeevi_to_add %>% filter(motus_identifier == motu_to_add)
+  tmp_file <- Zeevi_2015_ipa_producer_mock %>% mutate(Abundance = 0) %>% mutate(Genus = tax_info_motu_to_add$genus) %>% mutate(Species = tax_info_motu_to_add$mOTU) %>% mutate(mOTU_number = tax_info_motu_to_add$motus_identifier) %>% mutate(OTU = paste(Species,mOTU_number, delim = "_"))
+  Zeevi_rows_to_be_added <- rbind(Zeevi_rows_to_be_added, tmp_file)
+}
+
+Zeevi_2015_ipa_producers_long_complete <- rbind(Zeevi_2015_ipa_producers_long, Zeevi_rows_to_be_added)
+
+Asnicar_2021_ipa_producers_long <- psmelt(Asnicar_2021_tax_ps_rel_abun) %>% select(OTU, Sample, Abundance, Genus, Species, mOTU_number) %>% filter(mOTU_number %in% ipa_motus_of_interest) %>% mutate(Study = "Asnicar_2021")
+
+motus_not_observed <- setdiff(ipa_motus_of_interest, unique(Asnicar_2021_ipa_producers_long$mOTU_number))
+ipa_motus_of_interest_taxonomic_mappings_Asnicar_to_add <- ipa_motus_of_interest_taxonomic_mappings %>% filter(motus_identifier %in% motus_not_observed)
+
+Asnicar_2021_ipa_producer_mock <- Asnicar_2021_ipa_producers_long %>% filter(mOTU_number == "meta_mOTU_v31_12610")
+
+Asnicar_rows_to_be_added <- data.frame()
+
+## Can add abundance of 0 to all mOTUs that are never observed anyway.
+for (motu_to_add in ipa_motus_of_interest_taxonomic_mappings_Asnicar_to_add$motus_identifier){
+  tax_info_motu_to_add <- ipa_motus_of_interest_taxonomic_mappings_Asnicar_to_add %>% filter(motus_identifier == motu_to_add)
+  tmp_file <- Asnicar_2021_ipa_producer_mock %>% mutate(Abundance = 0) %>% mutate(Genus = tax_info_motu_to_add$genus) %>% mutate(Species = tax_info_motu_to_add$mOTU) %>% mutate(mOTU_number = tax_info_motu_to_add$motus_identifier) %>% mutate(OTU = paste(Species,mOTU_number, delim = "_"))
+  Asnicar_rows_to_be_added <- rbind(Asnicar_rows_to_be_added, tmp_file)
+}
+
+Asnicar_2021_ipa_producers_long_complete <- rbind(Asnicar_2021_ipa_producers_long, Asnicar_rows_to_be_added)
+
+## Combine the dataframes from both Asnicar and Zevi
+ipa_producers_combined_data <- rbind(Zeevi_2015_ipa_producers_long_complete, Asnicar_2021_ipa_producers_long_complete)
+
+## Now add in our own baseline samples as well (should be n=90)
+
+Mesnage_2023_ipa_producers_long <- psmelt(Mesnage_2023_tax_ps_rel_abun) %>% filter(Timepoint == "Before") %>% select(OTU, Sample, Abundance, Genus, Species, mOTU_number) %>% filter(mOTU_number %in% ipa_motus_of_interest) %>% mutate(Study = "Current study")
+
+motus_not_observed <- setdiff(ipa_motus_of_interest, unique(Mesnage_2023_ipa_producers_long$mOTU_number))
+ipa_motus_of_interest_taxonomic_mappings_Mesnage_to_add <- ipa_motus_of_interest_taxonomic_mappings %>% filter(motus_identifier %in% motus_not_observed)
+
+Mesnage_2023_ipa_producer_mock <- Mesnage_2023_ipa_producers_long %>% filter(mOTU_number == "meta_mOTU_v31_12610")
+
+Mesnage_rows_to_be_added <- data.frame()
+
+## Can add abundance of 0 to all mOTUs that are never observed anyway.
+for (motu_to_add in ipa_motus_of_interest_taxonomic_mappings_Mesnage_to_add$motus_identifier){
+  tax_info_motu_to_add <- ipa_motus_of_interest_taxonomic_mappings_Mesnage_to_add %>% filter(motus_identifier == motu_to_add)
+  tmp_file <- Mesnage_2023_ipa_producer_mock %>% mutate(Abundance = 0) %>% mutate(Genus = tax_info_motu_to_add$genus) %>% mutate(Species = tax_info_motu_to_add$mOTU) %>% mutate(mOTU_number = tax_info_motu_to_add$motus_identifier) %>% mutate(OTU = paste(Species,mOTU_number, delim = "_"))
+  Mesnage_rows_to_be_added <- rbind(Mesnage_rows_to_be_added, tmp_file)
+}
+
+Mesnage_2023_ipa_producers_long_complete <- rbind(Mesnage_2023_ipa_producers_long, Mesnage_rows_to_be_added)
+ipa_producers_combined_data <- rbind(ipa_producers_combined_data, Mesnage_2023_ipa_producers_long_complete)
+
+## Clean up species names
+ipa_producers_combined_data$Species <- gsub("s__", "", ipa_producers_combined_data$Species)
+ipa_producers_combined_data$Species <- gsub("NA ", "", ipa_producers_combined_data$Species)
+ipa_producers_combined_data$Species <- gsub("^[0-9]+ ", "", ipa_producers_combined_data$Species)
+ipa_producers_combined_data$Species <- gsub("\\[.*", "", ipa_producers_combined_data$Species)
+ipa_producers_combined_data$Species <- paste(ipa_producers_combined_data$Species, ipa_producers_combined_data$mOTU_number, sep = "_")
+ipa_producers_combined_data$Species <- gsub("_meta_mOTU_v31_", "_[m", ipa_producers_combined_data$Species)
+ipa_producers_combined_data$Species <- gsub("_ref_mOTU_v31_", "_[r", ipa_producers_combined_data$Species)
+ipa_producers_combined_data$Species <- gsub("_ext_mOTU_v31_", "_[e", ipa_producers_combined_data$Species)
+ipa_producers_combined_data$Species <- paste(ipa_producers_combined_data$Species, "]", sep = "")
+
+## Replace name of ref_mOTU_v31_01616 to also be sporogenes
+ipa_producers_combined_data$Species <- gsub("Clostridium botulinum_\\[r01616\\]", "Clostridium sporogenes \\/ botulinum_\\[r01616\\]", ipa_producers_combined_data$Species)
+
+mean_abundance_ipa_species <- ipa_producers_combined_data %>% group_by(Species) %>% summarise(mean = mean(Abundance)) %>% mutate(Species = as.factor(Species)) %>% arrange(desc(mean)) %>% pull(Species)
+
+quantilesP <- c(0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+baseColors <- c("#E41A1C", "#2635a6", "orange")
+ipa_producers_combined_data$Study <- as.factor(ipa_producers_combined_data$Study)
+Study_levels <- c("Current study", "Asnicar_2021", "Zeevi_2015")
+ipa_producers_combined_data$Study <- factor(ipa_producers_combined_data$Study, levels = Study_levels)
+
+Extended_Data_Fig3a <- ggplot(data = ipa_producers_combined_data, aes(x = factor(Species, levels = mean_abundance_ipa_species), y = log10(Abundance + 1e-4))) +
+    # First entry of quantilesP needs to be 0.5
+    geom_quantileplot(aes(fill = Study), quantilesP = quantilesP) +
+    scale_fill_quantile(baseColors, quantilesP) +
+    theme_publication() +
+    guides(fill = guide_legend(ncol = 1)) +
+    xlab("") +
+    ylab("Relative abundance (log10)") + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+    geom_vline(xintercept = 4.5, linewidth = 0.5) +
+    theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank())
+```
+
+## Extended Data Figure 3b
+```{r}
+Zeevi_2015_mOTUs_sums_sample <- as.data.frame(colSums(mOTU_profiles_Zeevi_2015_combined)) %>% rownames_to_column("Sample") 
+
+ggplot(Zeevi_2015_mOTUs_sums_sample) +
+  theme_classic() +
+  aes(x = `colSums(mOTU_profiles_Zeevi_2015_combined)`) +
+  geom_histogram() +
+  xlab("Total mOTU counts") 
+
+Zeevi_samples_to_remove <- Zeevi_2015_mOTUs_sums_sample %>% filter(`colSums(mOTU_profiles_Zeevi_2015_combined)` < 2000)
+
+Zeevi_2015_rarefied <- Zeevi_2015_tax_ps_unassigned_removed %>% ps_filter(sample_id %nin% Zeevi_samples_to_remove$Sample)
+Zeevi_2015_rarefied <- rarefy_even_depth(Zeevi_2015_rarefied, sample.size = 2000, rngseed = 1000) ## Double-check that all sums are indeed 2000
+
+Zeevi_2015_rarefied_long <- psmelt(Zeevi_2015_rarefied) %>% select(OTU, Sample, Abundance, Genus, Species, mOTU_number) %>% filter(mOTU_number %in% ipa_motus_of_interest) %>% mutate(Study = "Zeevi_2015")
+
+motus_not_observed <- setdiff(ipa_motus_of_interest, unique(Zeevi_2015_rarefied_long$mOTU_number))
+ipa_motus_of_interest_taxonomic_mappings_Zeevi_to_add <- ipa_motus_of_interest_taxonomic_mappings %>% filter(motus_identifier %in% motus_not_observed)
+
+Zeevi_2015_ipa_producer_mock <- Zeevi_2015_rarefied_long %>% filter(mOTU_number == "meta_mOTU_v31_12610")
+
+Zeevi_rarefied_rows_to_be_added <- data.frame()
+
+## Can add abundance of 0 to all mOTUs that are never observed anyway.
+for (motu_to_add in ipa_motus_of_interest_taxonomic_mappings_Zeevi_to_add$motus_identifier){
+  tax_info_motu_to_add <- ipa_motus_of_interest_taxonomic_mappings_Zeevi_to_add %>% filter(motus_identifier == motu_to_add)
+  tmp_file <- Zeevi_2015_ipa_producer_mock %>% mutate(Abundance = 0) %>% mutate(Genus = tax_info_motu_to_add$genus) %>% mutate(Species = tax_info_motu_to_add$mOTU) %>% mutate(mOTU_number = tax_info_motu_to_add$motus_identifier) %>% mutate(OTU = paste(Species,mOTU_number, delim = "_"))
+  Zeevi_rarefied_rows_to_be_added <- rbind(Zeevi_rarefied_rows_to_be_added, tmp_file)
+}
+
+Zeevi_2015_rarefied_long_complete <- rbind(Zeevi_2015_rarefied_long, Zeevi_rarefied_rows_to_be_added)
+
+
+## Can rarefy on 2000 mOTU counts, so have to remove samples with lower counts
+
+Asnicar_2021_mOTUs_sums_sample <- as.data.frame(colSums(mOTU_profiles_Asnicar_2021_combined)) %>% rownames_to_column("Sample") 
+
+ggplot(Asnicar_2021_mOTUs_sums_sample) +
+  theme_classic() +
+  aes(x = `colSums(mOTU_profiles_Asnicar_2021_combined)`) +
+  geom_histogram() +
+  xlab("Total mOTU counts") 
+
+Asnicar_samples_to_remove <- Asnicar_2021_mOTUs_sums_sample %>% filter(`colSums(mOTU_profiles_Asnicar_2021_combined)` < 5000)
+
+## Can rarefy on 5000 mOTU counts, so have to remove samples with lower counts
+
+Asnicar_2021_rarefied <- Asnicar_2021_tax_ps_unassigned_removed %>% ps_filter(sample_id %nin% Asnicar_samples_to_remove$Sample)
+Asnicar_2021_rarefied <- rarefy_even_depth(Asnicar_2021_rarefied, sample.size = 2000, rngseed = 1000) ## Double-check that all sums are indeed 2000
+
+Asnicar_2021_rarefied_long <- psmelt(Asnicar_2021_rarefied) %>% select(OTU, Sample, Abundance, Genus, Species, mOTU_number) %>% filter(mOTU_number %in% ipa_motus_of_interest) %>% mutate(Study = "Asnicar_2021")
+
+motus_not_observed <- setdiff(ipa_motus_of_interest, unique(Asnicar_2021_rarefied_long$mOTU_number))
+ipa_motus_of_interest_taxonomic_mappings_Asnicar_to_add <- ipa_motus_of_interest_taxonomic_mappings %>% filter(motus_identifier %in% motus_not_observed)
+
+Asnicar_2021_ipa_producer_mock <- Asnicar_2021_rarefied_long %>% filter(mOTU_number == "meta_mOTU_v31_12610")
+
+Asnicar_rarefied_rows_to_be_added <- data.frame()
+
+## Can add abundance of 0 to all mOTUs that are never observed anyway.
+for (motu_to_add in ipa_motus_of_interest_taxonomic_mappings_Asnicar_to_add$motus_identifier){
+  tax_info_motu_to_add <- ipa_motus_of_interest_taxonomic_mappings_Asnicar_to_add %>% filter(motus_identifier == motu_to_add)
+  tmp_file <- Asnicar_2021_ipa_producer_mock %>% mutate(Abundance = 0) %>% mutate(Genus = tax_info_motu_to_add$genus) %>% mutate(Species = tax_info_motu_to_add$mOTU) %>% mutate(mOTU_number = tax_info_motu_to_add$motus_identifier) %>% mutate(OTU = paste(Species,mOTU_number, delim = "_"))
+  Asnicar_rarefied_rows_to_be_added <- rbind(Asnicar_rarefied_rows_to_be_added, tmp_file)
+}
+
+Asnicar_2021_rarefied_long_complete <- rbind(Asnicar_2021_rarefied_long, Asnicar_rarefied_rows_to_be_added)
+
+## Combine the dataframes from both Asnicar and Zevi
+ipa_producers_rarefied_combined_data <- rbind(Zeevi_2015_rarefied_long_complete, Asnicar_2021_rarefied_long_complete)
+
+## Now add our own baseline data
+baseline_samples_Mesnage <- Mesnage_2023_metadata %>% filter(Timepoint == "Before") %>% distinct(sample.id)
+Mesnage_2023_mOTUs_sums_sample <- as.data.frame(colSums(mOTU_profiles_Mesnage_2023_combined)) %>% rownames_to_column("Sample") %>% filter(Sample %in% baseline_samples_Mesnage$sample.id) ## Use 4000 mOTU counts for rarefaction
+
+
+ggplot(Mesnage_2023_mOTUs_sums_sample) +
+  theme_classic() +
+  aes(x = `colSums(mOTU_profiles_Mesnage_2023_combined)`) +
+  geom_histogram() +
+  xlab("Total mOTU counts") 
+
+Mesnage_samples_to_remove <- Mesnage_2023_mOTUs_sums_sample %>% filter(`colSums(mOTU_profiles_Mesnage_2023_combined)` < 4000)
+
+Mesnage_2023_rarefied <- Mesnage_2023_tax_ps_unassigned_removed %>% ps_filter(Timepoint == "Before") %>% ps_filter(sample.id %nin% Mesnage_samples_to_remove$Sample)
+Mesnage_2023_rarefied <- rarefy_even_depth(Mesnage_2023_rarefied, sample.size = 4000, rngseed = 1000) ## Double-check that all sums are indeed 2000
+
+Mesnage_2023_rarefied_long <- psmelt(Mesnage_2023_rarefied) %>% select(OTU, Sample, Abundance, Genus, Species, mOTU_number) %>% filter(mOTU_number %in% ipa_motus_of_interest) %>% mutate(Study = "Current study")
+
+motus_not_observed <- setdiff(ipa_motus_of_interest, unique(Mesnage_2023_rarefied_long$mOTU_number))
+ipa_motus_of_interest_taxonomic_mappings_Mesnage_to_add <- ipa_motus_of_interest_taxonomic_mappings %>% filter(motus_identifier %in% motus_not_observed)
+
+Mesnage_2023_ipa_producer_mock <- Mesnage_2023_rarefied_long %>% filter(mOTU_number == "meta_mOTU_v31_12610")
+
+Mesnage_rarefied_rows_to_be_added <- data.frame()
+
+## Can add abundance of 0 to all mOTUs that are never observed anyway.
+for (motu_to_add in ipa_motus_of_interest_taxonomic_mappings_Mesnage_to_add$motus_identifier){
+  tax_info_motu_to_add <- ipa_motus_of_interest_taxonomic_mappings_Mesnage_to_add %>% filter(motus_identifier == motu_to_add)
+  tmp_file <- Mesnage_2023_ipa_producer_mock %>% mutate(Abundance = 0) %>% mutate(Genus = tax_info_motu_to_add$genus) %>% mutate(Species = tax_info_motu_to_add$mOTU) %>% mutate(mOTU_number = tax_info_motu_to_add$motus_identifier) %>% mutate(OTU = paste(Species,mOTU_number, delim = "_"))
+  Mesnage_rarefied_rows_to_be_added <- rbind(Mesnage_rarefied_rows_to_be_added, tmp_file)
+}
+
+Mesnage_2023_rarefied_long_complete <- rbind(Mesnage_2023_rarefied_long, Mesnage_rarefied_rows_to_be_added)
+
+## Now add everything together
+ipa_producers_rarefied_combined_data <- rbind(ipa_producers_rarefied_combined_data, Mesnage_2023_rarefied_long_complete)
+
+
+## Clean up species names
+ipa_producers_rarefied_combined_data$Species <- gsub("s__", "", ipa_producers_rarefied_combined_data$Species)
+ipa_producers_rarefied_combined_data$Species <- gsub("NA ", "", ipa_producers_rarefied_combined_data$Species)
+ipa_producers_rarefied_combined_data$Species <- gsub("^[0-9]+ ", "", ipa_producers_rarefied_combined_data$Species)
+ipa_producers_rarefied_combined_data$Species <- gsub("\\[.*", "", ipa_producers_rarefied_combined_data$Species)
+ipa_producers_rarefied_combined_data$Species <- paste(ipa_producers_rarefied_combined_data$Species, ipa_producers_rarefied_combined_data$mOTU_number, sep = "_")
+ipa_producers_rarefied_combined_data$Species <- gsub("_meta_mOTU_v31_", "_[m", ipa_producers_rarefied_combined_data$Species)
+ipa_producers_rarefied_combined_data$Species <- gsub("_ref_mOTU_v31_", "_[r", ipa_producers_rarefied_combined_data$Species)
+ipa_producers_rarefied_combined_data$Species <- gsub("_ext_mOTU_v31_", "_[e", ipa_producers_rarefied_combined_data$Species)
+ipa_producers_rarefied_combined_data$Species <- paste(ipa_producers_rarefied_combined_data$Species, "]", sep = "")
+
+## Replace name of ref_mOTU_v31_01616 to also be sporogenes
+ipa_producers_rarefied_combined_data$Species <- gsub("Clostridium botulinum_\\[r01616\\]", "Clostridium sporogenes \\/ botulinum_\\[r01616\\]", ipa_producers_rarefied_combined_data$Species)
+
+prevalence_rarefied_ipa_species <- ipa_producers_rarefied_combined_data %>% group_by(Species, Study) %>% summarise(across(Abundance, ~sum(.x != 0))) %>% dplyr::rename("Prevalence" = Abundance) %>% ungroup()
+
+## Have to divide all Asnicar values by 1093 samples, all Zeevi values by 851 samples and all from the current study by samples
+divisor_Zeevi <- 851
+divisor_Asnicar <- 1093
+divisor_Mesnage <- 87
+
+prevalence_rarefied_ipa_species <- prevalence_rarefied_ipa_species %>% mutate(Prevalence = case_when(Study == "Zeevi_2015" ~ Prevalence / divisor_Zeevi, Study == "Asnicar_2021" ~ Prevalence / divisor_Asnicar, Study == "Current study" ~ Prevalence / divisor_Mesnage, TRUE ~ Prevalence))
+
+prevalence_rarefied_ipa_species$Study <- as.factor(prevalence_rarefied_ipa_species$Study)
+Study_levels <- c("Current study", "Asnicar_2021", "Zeevi_2015")
+prevalence_rarefied_ipa_species$Study <- factor(prevalence_rarefied_ipa_species$Study, levels = Study_levels)
+
+Extended_Data_Fig3b <- ggplot(prevalence_rarefied_ipa_species) +
+    theme_publication() +
+    aes(x = factor(Species, levels = mean_abundance_ipa_species), y = Prevalence, fill = Study) + 
+    geom_bar(position = position_dodge2(width = 0.01), stat = "identity") + 
+    scale_fill_manual(values = c("#E41A1C", "#2635a6", "#FFD580")) +
+    guides(fill = guide_legend(ncol = 1)) +
+    xlab("") +
+    ylab("Prevalence (fraction)") + 
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+    geom_vline(xintercept = 4.5, linewidth = 0.5) +
+    theme(legend.position = "none")
+
+Combined_Fig3 <- Extended_Data_Fig3a + Extended_Data_Fig3b + plot_layout(ncol = 1)
+
+## Still have to play a bit with the layout and check that the 01616 is replaced by sporogenes / botulinum
+```
+
+## Extended Data Figure 4a
+```{r}
+## Quantile plots of the 4 Oscillibacters of interest and their relative abundance in our own study over time.
+
+Oscillibacter_species_of_interest <- c("ref_mOTU_v31_04664", "meta_mOTU_v31_12610", "ext_mOTU_v31_18233", "meta_mOTU_v31_12282")
+Mesnage_2023_all_long <- psmelt(Mesnage_2023_tax_ps_rel_abun) %>% select(OTU, Sample, Abundance, Genus, Species, mOTU_number, Timepoint) %>% filter(mOTU_number %in% Oscillibacter_species_of_interest)
+
+quantilesP <- c(0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+baseColors <- c('#366eb2','#bc3f60','#b25336','#ffb452')
+#ipa_producers_combined_data$Study <- as.factor(ipa_producers_combined_data$Study)
+#Study_levels <- c("Current study", "Asnicar_2021", "Zeevi_2015")
+#ipa_producers_combined_data$Study <- factor(ipa_producers_combined_data$Study, levels = Study_levels)
+
+Mesnage_2023_all_long$Species <- gsub("s__", "", Mesnage_2023_all_long$Species)
+Mesnage_2023_all_long$Species <- gsub("NA ", "", Mesnage_2023_all_long$Species)
+Mesnage_2023_all_long$Species <- gsub("^[0-9]+ ", "", Mesnage_2023_all_long$Species)
+Mesnage_2023_all_long$Species <- gsub("\\[.*", "", Mesnage_2023_all_long$Species)
+Mesnage_2023_all_long$Species <- paste(Mesnage_2023_all_long$Species, Mesnage_2023_all_long$mOTU_number, sep = "_")
+Mesnage_2023_all_long$Species <- gsub("_meta_mOTU_v31_", "_[m", Mesnage_2023_all_long$Species)
+Mesnage_2023_all_long$Species <- gsub("_ref_mOTU_v31_", "_[r", Mesnage_2023_all_long$Species)
+Mesnage_2023_all_long$Species <- gsub("_ext_mOTU_v31_", "_[e", Mesnage_2023_all_long$Species)
+Mesnage_2023_all_long$Species <- paste(Mesnage_2023_all_long$Species, "]", sep = "")
+
+Extended_Data_Fig4a <- ggplot(data = Mesnage_2023_all_long, aes(x = factor(Species, levels = mean_abundance_ipa_species), y = log10(Abundance + 1e-4))) +
+    # First entry of quantilesP needs to be 0.5
+    geom_quantileplot(aes(fill = Timepoint), quantilesP = quantilesP) +
+    scale_fill_quantile(baseColors, quantilesP) +
+    theme_publication() +
+    guides(fill = guide_legend(ncol = 1)) +
+    xlab("") +
+    ylab("Relative abundance (log10)") + 
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+    geom_vline(xintercept = 4.5, linewidth = 0.5) +
+    theme(legend.position = "none") + 
+    theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank())
+
+```
+
+## Extended Data Figure 4b
+```{r}
+joined_metaG_metaB_abundances <- Mesnage_2023_tax_ps_rel_abun_before_after_integration_long_log10 %>% select(OTU, Abundance, Participant_Timepoint) %>% left_join(genData_integration_wide, by = "Participant_Timepoint")
+joined_metaG_metaB_abundances$Timepoint <- joined_metaG_metaB_abundances$Participant_Timepoint
+joined_metaG_metaB_abundances$Timepoint <- gsub("_.*", "", joined_metaG_metaB_abundances$Timepoint)
+
+joined_metaG_metaB_abundances$OTU <- gsub(".*s__", "s__", joined_metaG_metaB_abundances$OTU)
+joined_metaG_metaB_abundances$OTU <- gsub("(?<!s__)\\[.*?\\]", "", joined_metaG_metaB_abundances$OTU, perl = TRUE)
+joined_metaG_metaB_abundances$OTU <- gsub("\\/.*\\|", "|", joined_metaG_metaB_abundances$OTU, perl = TRUE)
+joined_metaG_metaB_abundances$OTU <- gsub("s__", "", joined_metaG_metaB_abundances$OTU)
+joined_metaG_metaB_abundances$OTU <- gsub("\\|ext_mOTU_v31_", "_e", joined_metaG_metaB_abundances$OTU)
+joined_metaG_metaB_abundances$OTU <- gsub("\\|ref_mOTU_v31_", "_r", joined_metaG_metaB_abundances$OTU)
+joined_metaG_metaB_abundances$OTU <- gsub("\\|meta_mOTU_v31_", "_m", joined_metaG_metaB_abundances$OTU)
+joined_metaG_metaB_abundances$OTU <- gsub("species incertae sedis", "sp.", joined_metaG_metaB_abundances$OTU)
+joined_metaG_metaB_abundances$OTU <- gsub("\\b(\\w+)\\s+\\1\\b", "\\1", joined_metaG_metaB_abundances$OTU, perl = TRUE) 
+
+Oscillibacters_of_interest <- c("Oscillibacter sp. 57_20_m12610", "Oscillibacter sp. _r04664", "Oscillibacter sp._e18233", "Oscillibacter sp. 57_20_m12282" )
+
+IPA_Correlations_Extended_Data_Fig <- ggplot(joined_metaG_metaB_abundances %>% filter(OTU %in% Oscillibacters_of_interest) %>% filter(Timepoint == "Before") %>% select(1:4, "Indole-3-propionic acid_375")) +
+  aes(x = Abundance, y = `Indole-3-propionic acid_375`) +
+  theme_publication() +
+  geom_point(size = 0.8, alpha = 0.8) +
+  stat_cor(method = "spearman") +
+  xlab("") +
+  ylab("Normalized IC Indole-3-propionic acid (log10)") +
+  #labs(title = "Indole-3-propionic acid") +
+  theme(plot.title = element_text(size = 6)) +
+  facet_wrap(~OTU, ncol = 4)
+
+```
+

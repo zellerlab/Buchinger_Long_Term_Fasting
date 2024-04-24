@@ -1,0 +1,336 @@
+---
+title: "Figure_4"
+author: "QD"
+date: "2024-04-24"
+output: html_document
+---
+
+## Clean up serum metabolite data and do basic computations
+```{r}
+library(broom.mixed)
+
+## Check which non-baseline samples have been duplicated and then just take run1
+count_combinations <- genData_meta %>% group_by(Study_Patient, timepoint) %>% summarize(count = n()) %>% filter(count > 1) %>% filter(timepoint != "baseline" | count > 2) %>% ungroup()
+## Filter these out, which is basically just GEN1 and GEN30 in run 2
+genData_meta <- genData_meta %>% filter(!(Study_Patient == "GEN_1" & run == "2")) %>% filter(!(Study_Patient == "GEN_30" & run == "2"))
+
+## Remove GABA mentions and the full name (gamma-aminobyturic acid)
+genData_combined <- genData_combined %>% filter(!(str_detect(compoundId, "GABA"))) %>% filter(!(str_detect(compoundId, "Gamma-Aminobutyric acid")))
+
+## Now continue processing
+genData_combined <- genData_combined %>% mutate(metaGroupId = row_number()) ## To just get sequential numbers
+genData_combined$compound <- paste(genData_combined$compoundId, genData_combined$metaGroupId, sep = "_") ## , genData_combined$adductName
+genData_combined <- genData_combined %>% select("compoundId", "metaGroupId", "compound", starts_with("X"), starts_with("G"), -"groupId",  -"goodPeakCount")
+
+genData_combined_Long <- reshape2::melt(genData_combined, id.vars = c("compoundId", "compound", "metaGroupId"))
+colnames(genData_combined_Long) <- c("compoundId", "compound", "metaGroupId", "sampleId", "IC")
+
+genData_combined_Long <- merge(genData_combined_Long, genData_meta, by = "sampleId", all.x = T, all.y = T)
+
+## Average the IC values for the baseline samples
+genDataWide_combined_Long_baseline <- genData_combined_Long %>%
+  filter(timepoint == "baseline") %>%
+  group_by(compound, Study_Patient) %>% ## Importantly should be grouped by compound, not compoundId, as otherwise the isoform information can be lost!!
+  mutate(IC = replace(IC, Time == 0, mean(IC, na.rm = T))) %>%
+  slice(1) ## Just randomly take 1 of the 2 timepoints, they should be the same anyway. May have to revisit since run number will be used as a fixed effect. Otherwise just take run1, as this is also done for the duplicated samples.
+
+## Combine the new baseline values with all other timepoints
+genData_combined_Long <- genData_combined_Long %>% filter(!(timepoint == "baseline")) %>% rbind(genDataWide_combined_Long_baseline)
+
+genData_combined_Long$timepoint <- factor(genData_combined_Long$timepoint, levels = c("baseline", "3days", "end", "refed", "fup"))
+
+genData_combined_Norm <- genData_combined_Long %>%
+  group_by(sampleId) %>%
+  mutate(med = median(IC)) %>%
+  mutate(normIC = IC/med) %>%
+  ungroup() %>%
+  mutate(min.val = min(abs(normIC[normIC != 0]))/10) %>%
+  group_by(sampleId) %>%
+  mutate(normLogIC = log10((normIC + sqrt(normIC^2 + min.val^2))/2)) %>% ## The ungroup I added myself
+  ungroup()
+
+## Make the supplementary table here
+Table_S7 <- genData_combined_Norm 
+Table_S7$Study_Patient_Timepoint <- paste(Table_S7$Study_Patient, Table_S3$timepoint, sep = "_")
+Table_S7 <- Table_S7 %>% select(compound, normLogIC, Study_Patient_Timepoint) %>% pivot_wider(names_from = compound, values_from = normLogIC) %>% as.data.frame()
+write_xlsx(Table_S7, here("Supplementary_Tables","Table_S7.xlsx"))
+
+regressionFxn1 <- function(dat){
+  lmer(normLogIC ~ timepoint + run + (1|Study_Patient), data = dat) %>% ## Note that the run as a fixed effect is somewhat optional. At least make sure to double-check that output is somewhat comparable with or without this fixed effect
+  broom.mixed::tidy()
+}
+
+## This basically creates an empty dataframa and runs the lmer model for each metabolite.
+GenStats_combined_Time <- genData_combined_Norm %>% nest(statData = -compound) %>% mutate(df = purrr::map(statData, regressionFxn1)) %>% unnest_legacy(df) %>% filter(term != "(Intercept)") %>% filter(effect != "ran_pars") %>% select(-c(group, effect)) %>% filter(term != "run") 
+
+GenStats_combined_Time %>% DT::datatable() %>% DT::formatRound(columns = c("estimate", "std.error", "statistic"), digits = 3)
+GenStats_combined_Time <- GenStats_combined_Time %>% group_by(term) %>% mutate(p.adj = p.adjust(p.value, method = "fdr")) 
+
+write_xlsx(GenStats_combined_Time %>% select(compound, term, estimate, p.value, p.adj) %>% arrange(desc(estimate)) %>% rename("Compound" = compound, "Timepoint" = term, "LMM estimate" = estimate, "p.val" = p.value), here("Supplementary_Tables","TableS8.xlsx"))
+```
+
+## Figure 4A
+```{r}
+volcano_plot_figure_df <- GenStats_combined_Time %>% filter(term == "timepointend") %>% mutate(Significant = case_when(
+  p.adj < 0.05 ~ "Significant",
+  p.adj >= 0.05 ~ "Non-significant"
+)) %>% mutate(Significant = as.factor(Significant)) %>% mutate(Direction_change = case_when(
+  estimate > 0  & p.adj < 0.05 ~ "Enriched after",
+  estimate < 0  & p.adj < 0.05 ~ "Depleted after",
+  p.adj >= 0.05 ~ "Non-significant"
+))
+
+## Create the plot myself . Note that the timepoint should be End Fast (to align with the other figures/timepoints names)
+
+volcano_plot_serum_metabolomics <- ggplot(volcano_plot_figure_df) +
+  theme_publication() +
+  aes(x = estimate, y = -log10(p.adj), color = Direction_change) +
+  geom_point(alpha = 0.7) +
+  #scale_color_manual(values = c("lightgrey", "black")) +
+  scale_color_manual(values = c("#366eb2","#bc3f60", "lightgrey")) +
+  ylab("Significance (-log10 p-value)") +
+  xlab("Enrichment effect size") +
+  geom_hline(yintercept = 1.30103) +
+  geom_vline(xintercept = 0) +
+  ggrepel::geom_text_repel(
+  data = volcano_plot_figure_df %>% filter(p.adj < 0.0001 & estimate > 0.55 | estimate < -0.55),
+  aes(label = compound), max.overlaps = 10, size = 1.5, color = "black") + 
+  theme(legend.position = "none")
+  
+```
+
+## Figure 4B
+```{r}
+heatmap_figure <- GenStats_combined_Time
+heatmap_df <- GenStats_combined_Time %>% mutate(significance_symbol = case_when(p.adj < 0.05 & p.adj >= 0.001 ~ "*", 
+                                                                      p.adj < 0.001 & p.adj >= 0.0001 ~ "**",
+                                                                      p.adj < 0.0001 ~ "***"))
+
+heatmap_df$term <- gsub("timepoint", "", heatmap_df$term)
+heatmap_df$term <- gsub("3days", "Day 3 (n=32)", heatmap_df$term)
+heatmap_df$term <- gsub("end", "Day 10 (n=66)", heatmap_df$term)
+heatmap_df$term <- gsub("refed", "Day 13 (n=34)", heatmap_df$term)
+heatmap_df$term <- gsub("fup", "Day30 (n=32)", heatmap_df$term)
+
+correct_order_timepoints_heatmap <- c("Day 3 (n=32)", "Day 10 (n=66)", "Day 13 (n=34)", "Day30 (n=32)")
+
+heatmap_df <- heatmap_df %>% mutate(term = factor(term, levels = correct_order_timepoints_heatmap))
+
+## Order by the mean beta estimate for the first 2 timepoints (as these were taken during / at end of fasting) in the heatmap.
+metabolites_order <- heatmap_df %>% filter(term == "Day 3 (n=32)" | term == "Day 10 (n=66)") %>% group_by(compound) %>% mutate(mean_estimate = mean(estimate)) %>% slice(1) %>% ungroup() %>%  mutate(compound = factor(compound)) %>% arrange(estimate) %>% distinct(compound)
+
+breaks_heatmap <- c(-1.5, 0.4, 0.5)
+metabolites_to_show <- heatmap_df %>% group_by(compound) %>% filter(term == "Day 3 (n=32)" | term == "Day 10 (n=66)") %>% filter(any(p.adj < 0.05)) %>% filter(any(estimate < -0.45 | estimate > 0.45)) %>% distinct(compound)
+
+## Remove metabolites that are not significant at any timepoint. 
+heatmap_metabolites <- ggplot(heatmap_df %>% filter(compound %in% metabolites_to_show$compound)) +
+  aes(x = term, y = factor(compound, levels = metabolites_order$compound), fill = estimate) +
+  theme_publication() +
+  geom_tile() +
+  scale_fill_gradient2(low = "#366eb2", mid = "white", high="#bc3f60", limits=c(-2.2, 1), name = "Estimate") + 
+  geom_text(aes(label = significance_symbol), vjust = 0.75) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  xlab("") + 
+  ylab("") +
+  theme(legend.position = "none")
+```
+
+## Figure 4C
+```{r}
+genData_combined_Norm$timepoint <- gsub("baseline", "Day 0 (n=66)", genData_combined_Norm$timepoint)
+genData_combined_Norm$timepoint <- gsub("3days", "Day 3 (n=32)", genData_combined_Norm$timepoint)
+genData_combined_Norm$timepoint <- gsub("end", "Day 10 (n=66)", genData_combined_Norm$timepoint)
+genData_combined_Norm$timepoint <- gsub("refed", "Day 13 (n=34)", genData_combined_Norm$timepoint)
+genData_combined_Norm$timepoint <- gsub("fup", "Day30 (n=32)", genData_combined_Norm$timepoint)
+
+correct_order_timepoints <- c("Day 0 (n=66)", "Day 3 (n=32)", "Day 10 (n=66)", "Day 13 (n=34)", "Day30 (n=32)")
+
+genData_combined_Norm <- genData_combined_Norm %>% mutate(timepoint = factor(timepoint, levels = correct_order_timepoints))
+
+## Select some metabolites in each direction, for the after fasting timepoint the ketone bodies should be started with and then just the strongest effect size metabolites
+
+significance_data_metabolites <- heatmap_df %>% mutate(group1 = "Day 0 (n=66)") %>% rename("group2" = term) %>% select(compound, group1, group2, p.adj) %>% mutate(p.adj = ifelse(p.adj < threshold, format(p.adj, scientific = TRUE, digits = 2), sprintf("%.3f", p.adj))) %>% mutate(across(everything(), as.character)) %>% as.data.frame()
+
+library(ggpubr)
+Acetoacetic_acid_figure <- genData_combined_Norm %>%
+  filter(compound == "Acetoacetic acid_456") %>%
+  ggplot(aes(x = timepoint, y = normLogIC)) +
+  theme_publication() +
+  geom_boxplot(outlier.size = 0.4) +
+  geom_line(aes(x = timepoint, y = normLogIC, group = Study_Patient), alpha = 0.15) +
+  labs(x = "", y = "Normalized IC (log10)", title = "Acetoacetic acid") +
+  annotate("rect", xmin=1.5, xmax=3.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  stat_pvalue_manual(significance_data_metabolites %>% filter(compound == "Acetoacetic acid_456"), x = "group2", y.position = 2.4, label = "p.adj", color = "black", size = 1.7) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(plot.title = element_text(size = 6)) +
+  xlab("")
+
+Beta_Hydroxybutyric_acid_figure <- genData_combined_Norm %>%
+  filter(compound == "3-Hydroxybutyric acid_454") %>%
+  ggplot(aes(x = timepoint, y = normLogIC)) +
+  theme_publication() +
+  geom_boxplot(outlier.size = 0.4) +
+  geom_line(aes(x = timepoint, y = normLogIC, group = Study_Patient), alpha = 0.15) +
+  labs(x = "", y = "", title = "3-Hydroxybutyric acid") +
+  annotate("rect", xmin=1.5, xmax=3.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  stat_pvalue_manual(significance_data_metabolites %>% filter(compound == "3-Hydroxybutyric acid_454"), x = "group2", y.position = 3.1, label = "p.adj", color = "black", size = 1.7) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(plot.title = element_text(size = 6)) +
+  xlab("")
+
+two_Hydroxybutyric_acid_figure <- genData_combined_Norm %>%
+  filter(compound == "2-Hydroxybutyric acid_459") %>%
+  ggplot(aes(x = timepoint, y = normLogIC)) +
+  theme_publication() +
+  geom_boxplot(outlier.size = 0.4) +
+  geom_line(aes(x = timepoint, y = normLogIC, group = Study_Patient), alpha = 0.15) +
+  labs(x = "", y = "", title = "2-Hydroxybutyric acid") +
+  annotate("rect", xmin=1.5, xmax=3.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  stat_pvalue_manual(significance_data_metabolites %>% filter(compound == "2-Hydroxybutyric acid_459"), x = "group2", y.position = 3.1, label = "p.adj", color = "black", size = 1.7) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(plot.title = element_text(size = 6)) +
+  xlab("")
+
+IPA <- genData_combined_Norm %>%
+  filter(compound == "Indole-3-propionic acid_375") %>%
+  ggplot(aes(x = timepoint, y = normLogIC)) +
+  theme_publication() +
+  geom_boxplot(outlier.size = 0.4) +
+  geom_line(aes(x = timepoint, y = normLogIC, group = Study_Patient), alpha = 0.15) +
+  labs(x = "", y = "", title = "Indole-3-propionic acid") +
+  annotate("rect", xmin=1.5, xmax=3.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  stat_pvalue_manual(significance_data_metabolites %>% filter(compound == "Indole-3-propionic acid_375"), x = "group2", y.position = 1.55, label = "p.adj", color = "black", size = 1.7) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(plot.title = element_text(size = 6)) +
+  xlab("")
+```
+
+## Figure 4D
+```{r}
+## We should here make sure that the after fasting samples from metaG are matched to the 'end' samples of metaB
+genData_integration <- genData_combined_Norm %>% filter(timepoint == "Day 0 (n=66)" | timepoint == "Day 10 (n=66)") %>% mutate(Timepoint = case_when(timepoint == "Day 0 (n=66)" ~ "Before", timepoint == "Day 10 (n=66)" ~ "After")) 
+genData_integration <- genData_integration %>% mutate(Participant_Timepoint = paste(Timepoint, Study_Patient , sep = "_"))
+
+Mesnage_2023_tax_ps_rel_abun_before_after_integration <- Mesnage_2023_tax_ps_rel_abun_before_after %>% ps_filter(Study_Patient %in% genData_integration$Study_Patient)
+Mesnage_2023_tax_ps_rel_abun_before_after_integration_long <- psmelt(Mesnage_2023_tax_ps_rel_abun_before_after_integration)
+Mesnage_2023_tax_ps_rel_abun_before_after_integration_long <- Mesnage_2023_tax_ps_rel_abun_before_after_integration_long %>% mutate(Participant_Timepoint = paste(Timepoint, Study_Patient , sep = "_"))
+
+## Now make sure that we only have paired metaG / metaB abundances
+Mesnage_2023_tax_ps_rel_abun_before_after_integration_long <- Mesnage_2023_tax_ps_rel_abun_before_after_integration_long %>% filter(Participant_Timepoint %in% genData_integration$Participant_Timepoint)
+
+genData_integration <- genData_integration %>% filter(Participant_Timepoint %in% Mesnage_2023_tax_ps_rel_abun_before_after_integration_long$Participant_Timepoint)
+genData_integration_wide <- genData_integration %>% select(compound, normLogIC, Participant_Timepoint, Study_Patient) %>% pivot_wider(names_from = compound, values_from = normLogIC)
+
+## Filter metaG on 30% prevalence for the individual mOTUs, which retains 335 mOTUs
+Mesnage_2023_tax_ps_rel_abun_before_after_integration_long <- Mesnage_2023_tax_ps_rel_abun_before_after_integration_long %>% group_by(OTU) %>% filter(sum(Abundance > 0) > n() * 0.3)
+
+## Log10 transform abundances with 1e-4 as pseudocount 
+Mesnage_2023_tax_ps_rel_abun_before_after_integration_long_log10 <- Mesnage_2023_tax_ps_rel_abun_before_after_integration_long %>% mutate(Abundance = log10(Abundance + 1e-4)) 
+
+Mesnage_2023_tax_ps_rel_abun_before_after_integration_wide_log10 <- Mesnage_2023_tax_ps_rel_abun_before_after_integration_long_log10 %>% select(Participant_Timepoint, OTU, Abundance) %>% pivot_wider(names_from = Participant_Timepoint, values_from = Abundance) %>% column_to_rownames("OTU")
+
+## Start calculation from here, note that this takes a while to run (30 mins or so, but they are also 397 features)
+setwd(here("Other_Required_Data"))
+markers <- unique(genData_integration$compound)
+features_to_test <- Mesnage_2023_tax_ps_rel_abun_before_after_integration_wide_log10 ## For testing purposes [1:5, ]
+meta <- genData_integration_wide
+
+df.res.lmer <- tibble(mOTU=character(0), marker=character(0), p.val.lme=double(0), e.size.lme=double(0))
+if (!file.exists(here("Other_Required_Data", "lmer_results_mOTUs_update.tsv"))){
+  
+  pb <- progress_bar$new(total=nrow(features_to_test)) ## Nice function, but could consider to just remove it. 
+  
+  # loop through mOTUs
+  for (f in rownames(features_to_test)){
+    
+    df.features_to_test <- cbind(t(features_to_test[f,]), colnames(features_to_test))
+    colnames(df.features_to_test)<-c("rel.ab","unique")
+    
+    # loop through clinical markers
+    for (m in markers){
+      
+      df1 <- as.data.frame(df.features_to_test)
+      df2 <- data.frame(unique=meta$Participant_Timepoint, subject=as.factor(meta$Study_Patient), marker=meta[,m])
+      df.test <- merge(as.data.frame(df.features_to_test), data.frame(unique=meta$Participant_Timepoint, subject=as.factor(meta$Study_Patient), marker=meta[,m]), by='unique')
+      df.test$rel.ab <- as.numeric(df.test$rel.ab)
+      
+      df.test <- df.test %>% na.omit() ## Importantly, this throws out everything with NAs for the clinical markers!
+      
+      colnames(df.test) <- c("unique","rel.ab","subject",m)
+      marker <- df.test[[m]]
+      
+      if(length(unique(df.test$subject))<length(df.test$subject)){ ## Note QD: This line basically tests whether there is at least 1 subject with 2 samples. I guess it's built in from a safety point of view, as otherwise lmer may fail
+        lme.res <- lmer(formula('marker~rel.ab+(1|subject)'), data=df.test)
+        
+        x <- anova(lme.res) ## QD: So the lme.res object is then tested using anova, not 100% sure what is exactly tested then. This is probably for assessing the significance of the fixed effects in our LMM (the clinical marker). Consider to use the lmer.test function instead of anova. Update: Stick with anova, this is also recommended in the lmerTest package
+        e <- coefficients(summary(lme.res))
+        df.res.lmer <- df.res.lmer %>% add_row(mOTU=f, marker=m, p.val.lme=x[1,6], e.size.lme=e[2,1]) ## QD: P-value and estimate fit fom the LME
+      }
+      
+    }
+    pb$tick()
+  }
+  print("ok")
+  # p.adjust on the whole matrix
+  df.res.lmer <- df.res.lmer %>% mutate(p.adj.lme=p.adjust(p.val.lme, method = 'fdr'))
+  
+  write_tsv(df.res.lmer, here("Other_Required_Data", "lmer_results_mOTUs_update.tsv"))
+} else {
+  df.res.lmer <- read_tsv(here("Other_Required_Data", "lmer_results_mOTUs_update.tsv"))
+}
+
+## Clean up the species names
+df.res.lmer$mOTU <- gsub(".*s__", "s__", df.res.lmer$mOTU)
+df.res.lmer$mOTU <- gsub("(?<!s__)\\[.*?\\]", "", df.res.lmer$mOTU, perl = TRUE)
+df.res.lmer$mOTU <- gsub("\\/.*\\|", "|", df.res.lmer$mOTU, perl = TRUE)
+df.res.lmer$mOTU <- gsub("s__", "", df.res.lmer$mOTU)
+df.res.lmer$mOTU <- gsub("\\|ext_mOTU_v31_", "_e", df.res.lmer$mOTU)
+df.res.lmer$mOTU <- gsub("\\|ref_mOTU_v31_", "_r", df.res.lmer$mOTU)
+df.res.lmer$mOTU <- gsub("\\|meta_mOTU_v31_", "_m", df.res.lmer$mOTU)
+df.res.lmer$mOTU <- gsub("species incertae sedis", "sp.", df.res.lmer$mOTU)
+df.res.lmer$mOTU <- gsub("\\b(\\w+)\\s+\\1\\b", "\\1", df.res.lmer$mOTU, perl = TRUE) 
+
+species_to_color <- df.res.lmer %>% filter(marker == "Indole-3-propionic acid_375") %>% filter(e.size.lme > 0) %>% mutate(Significance = case_when(p.adj.lme < 0.05 ~ "Significant", p.adj.lme >= 0.05 ~ "Not_Significant")) %>% distinct(mOTU)
+
+Fig4D_data <- df.res.lmer %>% filter(marker == "Indole-3-propionic acid_375") %>% filter(e.size.lme > 0) %>% mutate(Significance = case_when(p.adj.lme < 0.05 ~ "Significant", p.adj.lme >= 0.05 ~ "Not_Significant")) %>% left_join(siamcat_Mesnage_2023_before_after_assocations %>% filter(mOTU %in% species_to_color$mOTU) %>% select(mOTU, fc), by = "mOTU") %>% mutate(Timepoint_Enrichment = case_when(fc < 0 ~ "Baseline", fc > 0 ~ "After Fasting"))
+
+## Also add in mean abundance data at baseline to size the dots
+Mesnage_2023_before_after_long <- psmelt(Mesnage_2023_tax_ps_rel_abun_before_after)
+Fig4D_abundance_data <- Mesnage_2023_before_after_long
+Fig4D_abundance_data <- Fig4D_abundance_data %>% filter(Timepoint == "Before") %>% group_by(OTU) %>% summarise(mean_rel_abundance = mean(Abundance)) %>% select(OTU, mean_rel_abundance) %>% distinct()
+Fig4D_abundance_data$OTU <- gsub(".*s__", "s__", Fig4D_abundance_data$OTU)
+Fig4D_abundance_data$OTU <- gsub("(?<!s__)\\[.*?\\]", "", Fig4D_abundance_data$OTU, perl = TRUE)
+Fig4D_abundance_data$OTU <- gsub("\\/.*\\|", "|", Fig4D_abundance_data$OTU, perl = TRUE)
+Fig4D_abundance_data$OTU <- gsub("s__", "", Fig4D_abundance_data$OTU)
+Fig4D_abundance_data$OTU <- gsub("\\|ext_mOTU_v31_", "_e", Fig4D_abundance_data$OTU)
+Fig4D_abundance_data$OTU <- gsub("\\|ref_mOTU_v31_", "_r", Fig4D_abundance_data$OTU)
+Fig4D_abundance_data$OTU <- gsub("\\|meta_mOTU_v31_", "_m", Fig4D_abundance_data$OTU)
+Fig4D_abundance_data$OTU <- gsub("species incertae sedis", "sp.", Fig4D_abundance_data$OTU)
+Fig4D_abundance_data$OTU <- gsub("\\b(\\w+)\\s+\\1\\b", "\\1", Fig4D_abundance_data$OTU, perl = TRUE)
+Fig4D_abundance_data <- Fig4D_abundance_data %>% filter(OTU %in% species_to_color$mOTU)
+
+Fig4D_data <- Fig4D_data %>% left_join(Fig4D_abundance_data, by = c("mOTU" = "OTU")) %>% distinct() 
+
+scale_factor <- 0.5
+
+Fig_4D <- ggplot(Fig4D_data) +
+  theme_publication() +
+  aes(x = e.size.lme, y = -log10(p.adj.lme), color = Timepoint_Enrichment) +
+  geom_point(aes(size = mean_rel_abundance), alpha = 0.7) +
+  #scale_size(range = c(1e-5, 0.1)) +
+  scale_color_manual(values = c("#bc3f60", "#366eb2")) +
+  ylab("Significance (-log10 p-value)") +
+  xlab("Enrichment effect size") +
+  geom_hline(yintercept = 1.30103) +
+  ggrepel::geom_text_repel(data = Fig4D_data %>% filter(p.adj.lme < 1e-5 & e.size.lme > 0.25), aes(label = mOTU), max.overlaps = 10, size = 1.5, color = "black") + 
+  xlim(0.15, 0.5) +
+  labs(title = "Indole-3-propionic acid") +
+  theme(plot.title = element_text(size = 6))
+
+```
+
+## Figure 4E was generated by Martin, re-make this in R for the revisions so that layout is 100% identical over all the panels
+```{r}
+
+```
+

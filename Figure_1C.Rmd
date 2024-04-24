@@ -1,0 +1,166 @@
+---
+title: "Figure_1C"
+author: "QD"
+date: "2024-02-13"
+output: html_document
+---
+
+## Load libaries
+```{r}
+library(readxl)
+library(tidyverse)
+library(ggpubr)
+library(kableExtra)
+library(ggthemes)
+library(ggembl)
+```
+
+## Calculations
+```{r}
+Mesnage_2023_metadata_before_after <- Mesnage_2023_metadata %>% filter(Timepoint == "Before" | Timepoint == "After") %>% count(Study_Patient) %>% filter(n > 1)
+Mesnage_2023_metadata_before_after <- Mesnage_2023_metadata %>% filter(Timepoint == "Before" | Timepoint == "After") %>% filter(Study_Patient %in% Mesnage_2023_metadata_before_after$Study_Patient)
+
+clinical_markers_of_interest <- c("Glucose", "HbA1c", "Insulin", "HDL", "LDL", "Triglycerides", "GGT", "Uric_Acid", "Urea", "Body_Weight")
+Mesnage_2023_metadata_before_after_clinical_markers <- Mesnage_2023_metadata_before_after %>% select(1:12, all_of(clinical_markers_of_interest))
+
+signif.num <- function(x) {
+  symnum(x, corr = FALSE, na = FALSE, legend = FALSE,
+         cutpoints = c(0, 0.001, 0.01, 0.05, 1), 
+         symbols = c("***", "**", "*", " "))
+}
+
+wilcox_results <- list()
+
+for (marker in clinical_markers_of_interest) {
+  # Perform comparison of means for the current marker
+  comparison <- compare_means(as.formula(paste(marker, "~Timepoint")), method="wilcox.test", paired = TRUE, data = Mesnage_2023_metadata_before_after_clinical_markers)
+  
+  # Store the result in the list
+  wilcox_results[[marker]] <- comparison
+}
+
+wilcox_results_df <- bind_rows(wilcox_results)
+wilcox_results_df <- wilcox_results_df %>% mutate(pval.adj = p.adjust (p, method = "fdr")) ## Calculate adjusted p-values, but use raw p-values as this is what Robin et al. always do for their more clinical variables, which is obviously different from an omics-type of experiment.
+
+y_positions <- c(250, 10, 120, 120, 280, 400, 105, 20, 60, 140) ## Have to double-check the 4th (HDL) and 5th (LDL) values to see if they work well in the figure
+
+wilcox_results_df <- wilcox_results_df %>% mutate(y.position = y_positions) %>% rename("Clinical_Marker" = 1)
+Mesnage_2023_metadata_before_after_clinical_markers <- Mesnage_2023_metadata_before_after_clinical_markers %>%
+arrange(Study_Patient, Timepoint) ## you need to reorder the input dataframe to match things https://github.com/tidyverse/ggplot2/issues/3535
+
+```
+
+## Now make all the subpanels for Figure 1C
+```{r}
+clinical_markers_n <- Mesnage_2023_metadata_before_after_clinical_markers %>% select(sample.id, Timepoint, Glucose:Body_Weight) %>% group_by(Timepoint) %>% summarise(across(Glucose:Body_Weight, ~ sum(!is.na(.x)))) ## These numbers need to be displayed in the plots to have an n for each comparison
+
+Glucose_Figure <- ggplot() +
+  theme_publication() +
+  geom_boxplot(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Glucose, fill = Timepoint), outlier.shape = NA) +
+  geom_point(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Glucose), size = 0.2, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  geom_line(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Glucose, group = Study_Patient), linetype = "11", linewidth = 0.3, alpha = 0.4, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  stat_pvalue_manual(wilcox_results_df %>% filter(Clinical_Marker == "Glucose"), label = "{p.adj}", color = "black", size = 2) + 
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank(), legend.position = "none") +
+  scale_fill_manual(values=c('#366eb2','#bc3f60')) +
+  ylab("Glucose (mg/dL)") +
+  geom_text(data = clinical_markers_n %>% select(Timepoint, Glucose), aes(x = Timepoint, y = 52, label = paste0("n=", Glucose)), size = 2) 
+
+HbA1c_Figure <- ggplot() +
+  theme_publication() +
+  geom_boxplot(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = HbA1c, fill = Timepoint), outlier.shape = NA) +
+  geom_point(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = HbA1c), size = 0.2, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  geom_line(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = HbA1c, group = Study_Patient), linetype = "11", linewidth = 0.3, alpha = 0.4, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  stat_pvalue_manual(wilcox_results_df %>% filter(Clinical_Marker == "HbA1c"), label = "{p.adj}", color = "black", size = 2) + 
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank(), legend.position = "none") +
+  scale_fill_manual(values=c('#366eb2','#bc3f60')) +
+  ylab("HbA1c (%)") +
+  geom_text(data = clinical_markers_n %>% select(Timepoint, HbA1c), aes(x = Timepoint, y = 4.5, label = paste0("n=", HbA1c)), size = 2)
+
+Insulin_Figure <- ggplot() +
+  theme_publication() +
+  geom_boxplot(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Insulin, fill = Timepoint), outlier.shape = NA) +
+  geom_point(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Insulin), size = 0.2, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  geom_line(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Insulin, group = Study_Patient), linetype = "11", linewidth = 0.3, alpha = 0.4, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  stat_pvalue_manual(wilcox_results_df %>% filter(Clinical_Marker == "Insulin"), label = "{p.adj}", color = "black", size = 2) + 
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank(), legend.position = "none") +
+  scale_fill_manual(values=c('#366eb2','#bc3f60')) +
+  ylab("Insulin (mIU/l)") +
+  geom_text(data = clinical_markers_n %>% select(Timepoint, Insulin), aes(x = Timepoint, y = 0, label = paste0("n=", Insulin)), size = 2)
+
+HDL_Figure <- ggplot() +
+  theme_publication() +
+  geom_boxplot(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = HDL, fill = Timepoint), outlier.shape = NA) +
+  geom_point(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = HDL), size = 0.2, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  geom_line(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = HDL, group = Study_Patient), linetype = "11", linewidth = 0.3, alpha = 0.4, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  stat_pvalue_manual(wilcox_results_df %>% filter(Clinical_Marker == "HDL"), label = "{p.adj}", color = "black", size = 2) + 
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank(), legend.position = "none") +
+  scale_fill_manual(values=c('#366eb2','#bc3f60')) +
+  ylab("HDL (mg/dL)") +
+  geom_text(data = clinical_markers_n %>% select(Timepoint, HDL), aes(x = Timepoint, y = 20, label = paste0("n=", HDL)), size = 2)
+
+LDL_Figure <- ggplot() +
+  theme_publication() +
+  geom_boxplot(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = LDL, fill = Timepoint), outlier.shape = NA) +
+  geom_point(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = LDL), size = 0.2, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  geom_line(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = LDL, group = Study_Patient), linetype = "11", linewidth = 0.3, alpha = 0.4, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  stat_pvalue_manual(wilcox_results_df %>% filter(Clinical_Marker == "LDL"), label = "{p.adj}", color = "black", size = 2) + 
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank(), legend.position = "none") +
+  scale_fill_manual(values=c('#366eb2','#bc3f60')) +
+  ylab("LDL (mg/dL)") +
+  geom_text(data = clinical_markers_n %>% select(Timepoint, LDL), aes(x = Timepoint, y = 25, label = paste0("n=", LDL)), size = 2)
+
+Triglycerides_Figure <- ggplot() +
+  theme_publication() +
+  geom_boxplot(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Triglycerides, fill = Timepoint), outlier.shape = NA) +
+  geom_point(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Triglycerides), size = 0.2, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  geom_line(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Triglycerides, group = Study_Patient), linetype = "11", linewidth = 0.3, alpha = 0.4, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  stat_pvalue_manual(wilcox_results_df %>% filter(Clinical_Marker == "Triglycerides"), label = "{p.adj}", color = "black", size = 2) + 
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank(), legend.position = "none") +
+  scale_fill_manual(values=c('#366eb2','#bc3f60')) +
+  ylab("Triglycerides (mg/dl)") +
+  geom_text(data = clinical_markers_n %>% select(Timepoint, Triglycerides), aes(x = Timepoint, y = 39, label = paste0("n=", Triglycerides)), size = 2)
+
+GGT_Figure <- ggplot() +
+  theme_publication() +
+  geom_boxplot(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = GGT, fill = Timepoint), outlier.shape = NA) +
+  geom_point(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = GGT), size = 0.2, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  geom_line(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = GGT, group = Study_Patient), linetype = "11", linewidth = 0.3, alpha = 0.4, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  stat_pvalue_manual(wilcox_results_df %>% filter(Clinical_Marker == "GGT"), label = "{p.adj}", color = "black", size = 2) + 
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank(), legend.position = "none") +
+  scale_fill_manual(values=c('#366eb2','#bc3f60')) +
+  ylab("Gamma-GT (U/L)") +
+  geom_text(data = clinical_markers_n %>% select(Timepoint, GGT), aes(x = Timepoint, y = 5, label = paste0("n=", GGT)), size = 2)
+
+Uric_Acid_Figure <- ggplot() +
+  theme_publication() +
+  geom_boxplot(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Uric_Acid, fill = Timepoint), outlier.shape = NA) +
+  geom_point(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Uric_Acid), size = 0.2, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  geom_line(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Uric_Acid, group = Study_Patient), linetype = "11", linewidth = 0.3, alpha = 0.4, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  stat_pvalue_manual(wilcox_results_df %>% filter(Clinical_Marker == "Uric_Acid"), label = "{p.adj}", color = "black", size = 2) + 
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank(), legend.position = "none") +
+  scale_fill_manual(values=c('#366eb2','#bc3f60')) +
+  ylab("Uric Acid (mg/dl)") +
+  geom_text(data = clinical_markers_n %>% select(Timepoint, Uric_Acid), aes(x = Timepoint, y = 2.9, label = paste0("n=", Uric_Acid)), size = 2)
+
+Urea_Figure <- ggplot() +
+  theme_publication() +
+  geom_boxplot(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Urea, fill = Timepoint), outlier.shape = NA) +
+  geom_point(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Urea), size = 0.2, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  geom_line(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Urea, group = Study_Patient), linetype = "11", linewidth = 0.3, alpha = 0.4, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  stat_pvalue_manual(wilcox_results_df %>% filter(Clinical_Marker == "Urea"), label = "{p.adj}", color = "black", size = 2) + 
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank(), legend.position = "none") +
+  scale_fill_manual(values=c('#366eb2','#bc3f60')) +
+  ylab("Urea (mg/dl)") +
+  geom_text(data = clinical_markers_n %>% select(Timepoint, Urea), aes(x = Timepoint, y = 5, label = paste0("n=", Urea)), size = 2)
+
+Body_Weight_Figure <- ggplot() +
+  theme_publication() +
+  geom_boxplot(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Body_Weight, fill = Timepoint), outlier.shape = NA) +
+  geom_point(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Body_Weight), size = 0.2, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  geom_line(data = Mesnage_2023_metadata_before_after_clinical_markers, aes(x = Timepoint, y = Body_Weight, group = Study_Patient), linetype = "11", linewidth = 0.3, alpha = 0.4, position = position_jitter(height = 0, width = 0.2, seed = 100)) +
+  stat_pvalue_manual(wilcox_results_df %>% filter(Clinical_Marker == "Body_Weight"), label = "{p.adj}", color = "black", size = 2) + 
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank(), legend.position = "none") +
+  scale_fill_manual(values=c('#366eb2','#bc3f60')) +
+  ylab("Body Weight (kg)") +
+  geom_text(data = clinical_markers_n %>% select(Timepoint, Body_Weight), aes(x = Timepoint, y = 42, label = paste0("n=", Body_Weight)), size = 2)
+```

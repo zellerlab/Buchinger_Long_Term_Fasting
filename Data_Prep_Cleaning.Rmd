@@ -1,0 +1,606 @@
+---
+title: "Data_Prep_Cleaning"
+author: "QD"
+date: "2024-01-04"
+output: html_document
+---
+## Load libraries
+```{r}
+library(tidyverse)
+library(phyloseq)
+library(readxl)
+library(microViz)
+library(SIAMCAT)
+library(patchwork)
+library(ggembl)
+library(here)
+library(lmerTest)
+`%nin%` = Negate(`%in%`)
+```
+
+## Process our own taxonomic profiles!
+```{r}
+mOTU_profiles_Mesnage_2023 <- readRDS(here("Profiles", "Mesnage_2023_res_mOTUs.rds")) %>% as.data.frame() %>% rownames_to_column('taxon') %>% pivot_longer(-taxon) %>% rename(sampleID = name, Counts = value)
+
+counts_per_sample_Mesnage_2023 <- mOTU_profiles_Mesnage_2023 %>% group_by(sampleID) %>% summarise(counts_sum = sum(Counts)) ## This all looks very good
+
+## Plot counts per sample
+ggplot(counts_per_sample_Mesnage_2023) +
+  theme_classic() +
+  aes(x = counts_sum) +
+  geom_histogram(color = "black") +
+  xlab("mOTU counts")
+
+mOTU_profiles_Mesnage_2023_combined <- mOTU_profiles_Mesnage_2023 %>% mutate(sampleID_new = str_remove(sampleID,".singles")) %>% group_by(taxon, sampleID_new) %>% mutate(Counts = sum(Counts)) %>% ungroup() %>% select(-sampleID) %>% distinct() %>% pivot_wider(names_from = sampleID_new, values_from = Counts) %>% column_to_rownames("taxon") %>% as.matrix()
+
+## Construct taxonomy table
+
+unassigned_cat <- t(as.data.frame(rep(c("unassigned"), each = 8))) %>% as.data.frame() %>% dplyr::rename(Kingdom = 1, Phylum = 2, Class = 3 , Order = 4, Family = 5, Genus = 6, Species = 7, mOTU_number = 8)
+mOTU_profiles_Mesnage_2023_taxonomy <- as.data.frame(rownames(mOTU_profiles_Mesnage_2023_combined)) %>% rename("Full_taxonomy" =  1)
+mOTU_profiles_Mesnage_2023_taxonomy <- mOTU_profiles_Mesnage_2023_taxonomy %>% filter(Full_taxonomy != "unassigned") %>% tidyr::separate_wider_delim(Full_taxonomy, "|", names = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species", "mOTU_number")) %>% add_row(unassigned_cat)
+## Now add back in the full mOTUs name for proper matching
+mOTU_profiles_Mesnage_2023_taxonomy <- mOTU_profiles_Mesnage_2023_taxonomy %>% mutate(full_mOTUs_name = rownames(mOTU_profiles_Mesnage_2023_combined)) %>% column_to_rownames(var = "full_mOTUs_name") %>% as.matrix()
+
+Mesnage_2023_metadata <- read_xlsx("../Metadata/20230912_sample_metadata_anonymised.xlsx")
+Mesnage_2023_metadata <- Mesnage_2023_metadata %>% drop_na(sample.id) %>% filter(Type == "Stool") %>% as.data.frame()
+rownames(Mesnage_2023_metadata) <- Mesnage_2023_metadata$sample.id
+Mesnage_2023_metadata$Timepoint <- as.factor(Mesnage_2023_metadata$Timepoint)
+Mesnage_2023_metadata$Timepoint <- factor(Mesnage_2023_metadata$Timepoint, levels = c("Before", "After", "FUP_1", "FUP_2"))
+colnames(Mesnage_2023_metadata) <- gsub(" ", "_", colnames(Mesnage_2023_metadata))
+## Add in body weight loss and BP change after intervention. Note that it's fairly annoying that NA values are not encoded as NA in R, but rather as a character NA.
+is.na(Mesnage_2023_metadata) <- Mesnage_2023_metadata == "NA" ## Please double-check this doesn't accidentally hit any other strings with NA in it
+Mesnage_2023_metadata <- Mesnage_2023_metadata %>% relocate(Sex, .after = Type) %>% relocate(Problem, .after = Type) %>% relocate(laxative, .after = Type) ## Now from column Fasting_Days onwards everything is numeric, so let's convert those column classes
+Mesnage_2023_metadata <- Mesnage_2023_metadata %>% mutate_at(vars(Fasting_Days:76), as.numeric)
+
+## Now compute delta before - after for all these numeric variables, just in case we ever want to have a look at them.
+weight_loss_values <- Mesnage_2023_metadata %>% select(Study_Patient, Timepoint, Body_Weight) %>% pivot_wider(names_from = Timepoint, values_from = Body_Weight) %>% mutate(Difference = After - Before)
+
+delta_values_before_after <- Mesnage_2023_metadata %>% filter(Timepoint == "Before" | Timepoint == "After") %>% select(sample.id:Timepoint, Body_Weight:76) %>% pivot_longer(!c(sample.id:Timepoint), names_to = "Marker", values_to = "Value") %>% group_by(Study_Patient, Marker) %>% dplyr::reframe(delta = (Value[Timepoint == "After"] - Value[Timepoint == "Before"])) %>% ungroup()
+
+delta_values_before_after_wide <- delta_values_before_after %>% mutate(Marker = paste0("delta_", Marker)) %>% pivot_wider(names_from = Marker, values_from = delta)
+
+Mesnage_2023_metadata <- Mesnage_2023_metadata %>% left_join(delta_values_before_after_wide, by = "Study_Patient")
+Mesnage_2023_metadata <- Mesnage_2023_metadata %>% mutate(delta_percent_body_weight_loss = abs(delta_Body_Weight / Body_Weight))
+
+## Note that the tertile division should only be applied to the baseline!!
+Mesnage_2023_metadata_before_to_be_added <- Mesnage_2023_metadata %>% filter(Timepoint == "Before") %>% mutate_at(vars(starts_with("delta")), list(tertiles = ~ntile(.x, 3))) %>% mutate_at(vars(contains("tertile")), as.character) %>% select(sample.id, matches("tertiles")) ## Note that this tertile division puts highest values in tertile 3, so for variables that have a negative delta that is actually a good thing (e.g. think of drop in BP), tertile 1 is actually the one with the most positive response. 
+
+Mesnage_2023_metadata <- Mesnage_2023_metadata %>% left_join(Mesnage_2023_metadata_before_to_be_added, by = "sample.id")
+
+rownames(Mesnage_2023_metadata) <- Mesnage_2023_metadata$sample.id
+
+metadata_full_taxonomy_Mesnage_2023_ps <- phyloseq::sample_data(Mesnage_2023_metadata)
+
+class(mOTU_profiles_Mesnage_2023_combined) <- "numeric"
+OTU_Mesnage_2023 <- otu_table(mOTU_profiles_Mesnage_2023_combined, taxa_are_rows = TRUE)
+TAX_Mesnage_2023 <- tax_table(mOTU_profiles_Mesnage_2023_taxonomy)
+
+Mesnage_2023_tax_ps <- phyloseq(OTU_Mesnage_2023, TAX_Mesnage_2023, metadata_full_taxonomy_Mesnage_2023_ps)
+
+## Make a phyloseq object with unassigned counts removed for diversity analyses
+remove_unassigned <- "unassigned"
+Mesnage_2023_tax_ps_unassigned_removed <- Mesnage_2023_tax_ps
+Mesnage_2023_tax_ps_unassigned_removed@otu_table <- Mesnage_2023_tax_ps_unassigned_removed@otu_table[!rownames(Mesnage_2023_tax_ps_unassigned_removed@otu_table) %in% remove_unassigned, ]
+
+## Make rel abundance phyloseq, this should still include the unassigned category for rel abundance calculations!
+Mesnage_2023_tax_ps_rel_abun <- microbiome::transform(Mesnage_2023_tax_ps, "compositional")
+
+## Now remove the "unassigned category"
+Mesnage_2023_tax_ps_rel_abun@otu_table <- Mesnage_2023_tax_ps_rel_abun@otu_table[!rownames(Mesnage_2023_tax_ps_rel_abun@otu_table) %in% remove_unassigned, ]
+Mesnage_2023_tax_ps_rel_abun@tax_table <- Mesnage_2023_tax_ps_rel_abun@tax_table[!rownames(Mesnage_2023_tax_ps_rel_abun@tax_table) %in% remove_unassigned, ]
+Mesnage_2023_tax_ps_rel_abun_before_after <- Mesnage_2023_tax_ps_rel_abun %>% ps_filter(Timepoint == "Before" | Timepoint == "After")
+Mesnage_2023_metadata %>% filter(Timepoint == "Before" | Timepoint == "After") %>% count(Study_Patient) %>% filter(n < 2)
+
+## Make phyloseq of only people with all4  samples (so the ones with complete long-term follow-up)
+study_patients_n_4 <- metadata_full_taxonomy_Mesnage_2023_ps %>% group_by(Study_Patient) %>% count() %>% filter(n > 3)
+Mesnage_2023_tax_ps_rel_abun_4 <- Mesnage_2023_tax_ps_rel_abun %>% ps_filter(Study_Patient %in% study_patients_n_4$Study_Patient)
+```
+
+
+## Load Mesnage_2023 CAZy profiles and general CAZyme substrate annotation file
+```{r}
+CAZy_Mesnage_2023 <- read_delim(here("Profiles", "Mesnage_2023_collated.feature.combined_rpkm.txt.gz"))
+CAZy_Mesnage_2023 <- CAZy_Mesnage_2023 %>% filter(feature != "total_reads" & feature != "filtered_reads" & feature != "category") %>% mutate_if(is.numeric , replace_na, replace = 0) %>% column_to_rownames("feature") %>% as.matrix()
+CAZy_Mesnage_2023_otu_table <- otu_table(CAZy_Mesnage_2023, taxa_are_rows = TRUE)
+
+CAZy_Mesnage_2023_ps <- phyloseq(CAZy_Mesnage_2023_otu_table, metadata_full_taxonomy_Mesnage_2023_ps)
+CAZy_Mesnage_2023_ps_before_after <- CAZy_Mesnage_2023_ps %>% ps_filter(Timepoint == "Before" | Timepoint == "After")
+
+completed_substrate_annotations <- read_xlsx(here("Other_Required_Data", "20230607_glycan_annotations_cleaned.xlsx"))
+glycan_annotations_final_cleaned <- completed_substrate_annotations %>% select(c(Family:Subfamily,ORIGIN:FUNCTION_AT_DESTINATION_3, Glycan_annotation))
+glycan_annotations_final_cleaned_long <- glycan_annotations_final_cleaned %>% separate_rows(ORIGIN,sep=",") %>% separate_rows(FUNCTION_IN_ORIGIN,sep=",") %>% separate_rows(FUNCTION_AT_DESTINATION_1,sep=",") %>% separate_rows(FUNCTION_AT_DESTINATION_2,sep=",") %>% separate_rows(FUNCTION_AT_DESTINATION_3,sep=",")
+glycan_annotations_cleaned <- glycan_annotations_final_cleaned
+test <- glycan_annotations_final_cleaned_long %>% select(FUNCTION_AT_DESTINATION_1,Subfamily) %>% drop_na() %>% filter(!FUNCTION_AT_DESTINATION_1 == "Unknown") %>% group_by(FUNCTION_AT_DESTINATION_1) %>% distinct() %>% group_by(FUNCTION_AT_DESTINATION_1) ## Unknown is removed as this is a non-informative substrate level.
+test$FUNCTION_AT_DESTINATION_1 <- as.factor(test$FUNCTION_AT_DESTINATION_1)
+test$Subfamily <- gsub("([A-Z])_","\\1",test$Subfamily)
+```
+
+## KO abundances
+```{r}
+KO_annotations <- read_delim(here("Other_Required_Data","ko_list"))
+prokaryotic_KOs <- read_table(here("Other_Required_Data","prokaryote.hal"), col_names = FALSE)
+prokaryotic_KOs$X1 <- gsub("\\.hmm", "", prokaryotic_KOs$X1)
+
+KO_Mesnage_2023 <- read_delim(here("Profiles", "Mesnage_2023_collated.KEGG_ko.combined_scaled.txt.gz"))
+## Add in 0s for NA and then divide by filtered_reads. The trick for doing is, is simply to filter out the total_reads and category_reads numbers and then assign the filtered_read value to each row, after which one can just divide, per sample, the Counts column by the filtered reads value
+normalized_counts_long <- KO_Mesnage_2023 %>% as.data.frame() %>% pivot_longer(!feature, names_to = "SampleID", values_to = "Count") %>% mutate(Count = replace_na(Count, 0)) %>% group_by(SampleID) %>% filter(feature!= "total_reads" & feature != "category") %>% mutate(filtered_reads_value = Count[feature == "filtered_reads"]) %>% group_by(SampleID) %>% mutate(Normalized_Count = Count / filtered_reads_value) %>% ungroup() %>% select(-c(Count, filtered_reads_value)) %>% filter(feature!= "filtered_reads")
+
+normalized_counts_long$feature <- gsub("ko:", "", normalized_counts_long$feature)
+normalized_counts_prokaryotic_long <- normalized_counts_long %>% filter(feature %in% prokaryotic_KOs$X1)
+## Note that by filtering on prokaryotic KOs, we retain 8055 / 12598 KOs. So 4543 KOs are thrown out here. Note that this may delete contributions of eukaryotic gut commensals, but what can you do..... Note that these generally have very low sums though
+
+## Use 1e-8 as PC
+#non_zero_values <- normalized_counts_prokaryotic_matrix[normalized_counts_prokaryotic_matrix != 0]
+#tenth_percentile <- quantile(non_zero_values, 0.10)
+
+normalized_counts_prokaryotic_matrix <- normalized_counts_prokaryotic_long %>% pivot_wider(names_from = SampleID, values_from = Normalized_Count) %>% column_to_rownames("feature") %>% as.matrix()
+KO_Mesnage_2023_otu_table <- otu_table(normalized_counts_prokaryotic_matrix, taxa_are_rows = TRUE)
+
+## Now build a phyloseq object from this
+ko_Mesnage_2023_ps <- phyloseq(KO_Mesnage_2023_otu_table, metadata_full_taxonomy_Mesnage_2023_ps)
+ko_Mesnage_2023_ps_before_after <- ko_Mesnage_2023_ps %>% ps_filter(Timepoint == "Before" | Timepoint == "After")
+```
+
+## Obtain Gut Metabolic Modules (GMM) abundances based on the KO profiles
+```{r}
+library(omixerRpm)
+## Need to slightly adapt the matrix layout to be in proper format for GMM computing
+normalized_counts_for_gmms <- normalized_counts_prokaryotic_long %>% pivot_wider(names_from = SampleID, values_from = Normalized_Count)
+
+## Compute abundances
+db <- loadDB("GMMs.v1.07")
+GMMs <- rpm(normalized_counts_for_gmms, module.db = db)
+GMMs_df <- asDataFrame(GMMs, "abundance")
+
+hierarchy_file <- read_delim(here("Other_Required_Data", "GMM.hierarchy.v1.07.tsv"))
+## Put into phyloseq object
+GMMs_matrix <- GMMs_df %>% select(-Module) %>% column_to_rownames("Description")
+GMM_Mesnage_2023_otu_table <- otu_table(GMMs_matrix, taxa_are_rows = TRUE)
+
+#non_zero_values <- GMMs_matrix[GMMs_matrix != 0]
+#tenth_percentile <- quantile(non_zero_values, 0.10)
+
+gmm_Mesnage_2023_ps <- phyloseq(GMM_Mesnage_2023_otu_table, metadata_full_taxonomy_Mesnage_2023_ps)
+gmm_Mesnage_2023_ps_before_after <- gmm_Mesnage_2023_ps %>% ps_filter(Timepoint == "Before" | Timepoint == "After") 
+
+gmm_Mesnage_2023_long <- psmelt(gmm_Mesnage_2023_ps)
+gmm_Mesnage_2023_long_hierarchy <- gmm_Mesnage_2023_long %>% left_join(hierarchy_file %>% select(Name, HL1, HL2), by = c("OTU" = "Name"))
+
+HL1_sums <- gmm_Mesnage_2023_long_hierarchy %>% group_by(Sample, HL1) %>% mutate(HL1_sums = sum(Abundance)) %>% distinct(Sample, HL1_sums, .keep_all = TRUE) ## To remove duplicate rows. Should probably also scale the values so that each sample has a sum of 1?
+HL1_sums_scaled <- HL1_sums %>% group_by(Sample) %>% mutate(HL1_sums = HL1_sums / sum(HL1_sums))
+```
+
+## Human read counts and counts aligning to the GMGC to get a human-microbial ratio
+```{r}
+Mesnage_2023_human_counts <- read_delim(here("Profiles", "Mesnage_2023_human_read_counts.txt"), col_names = FALSE)
+Mesnage_2023_general_count_stats <- read_delim(here("Profiles", "Mesnage_2023_read_count_table.txt"), col_names = TRUE)
+
+Mesnage_2023_human_counts <- Mesnage_2023_human_counts %>% dplyr::rename(SampleID = 1, single_reads = 2, paired_reads = 3) %>% mutate(SampleID = gsub(".orphans", "", SampleID)) %>% group_by(SampleID) %>% mutate(single_reads = sum(single_reads)) %>% filter(paired_reads != 0) %>% mutate(total_sum = sum(single_reads + 2*paired_reads)) %>% ungroup() ## The line that filters out paired reads != 0 is to make sure we only have 1 line per sample
+
+stats <- Mesnage_2023_human_counts %>% left_join(Mesnage_2023_general_count_stats %>% select(sample, pri_aln), by = c("SampleID" = "sample")) %>% mutate(human_microbial_ratio = total_sum / pri_aln)
+
+read_counts_metadata <- Mesnage_2023_metadata %>% select(1:3) %>% left_join(stats %>% select(SampleID, human_microbial_ratio), by =  c("sample.id" = "SampleID"))
+
+DNA_concentrations <- read_xlsx(here("Metadata", "20231030_DNA Source Plates_sample name_DNA conc.xlsx"))
+```
+
+## mOTUs-CAZy abundances / prevalence
+```{r}
+motus_cazy <- read_delim(here("Metadata", "cazy_mOTUs_abundances.tsv")) ## Small hack to convert to mOTUs 3.1 identifiers
+motus_cazy$mOTU_ID <- gsub("_v3_", "_v31_", motus_cazy$mOTU_ID)
+motus_cazy <- motus_cazy %>% left_join(as.data.frame(mOTU_profiles_Mesnage_2023_taxonomy) %>% rownames_to_column(var = "mOTU"), by = c("mOTU_ID" = "mOTU_number")) %>% tidyr::drop_na() ## Not all can be matched, but that makes sense considering limited taxonomic space we observe in this study.
+
+## Construct a phyloseq with taxa as samples to see if we can predict the change in taxonomy based on CAZyme signatures. Note that for this part, one needs to first run Figure_2 scripts
+taxonomy_before_after_assocations <- associations(siamcat_Mesnage_2023_before_after)
+link_taxonomies <- data.frame(mOTU_profiles_Mesnage_2023_taxonomy) %>% rownames_to_column("full_taxonomy") %>% select(mOTU_number, full_taxonomy)
+
+## Only select mOTUs with CAZy information
+metadata_taxa <- taxonomy_before_after_assocations %>% rownames_to_column("mOTU") %>% left_join(link_taxonomies, by = c("mOTU" = "full_taxonomy")) %>% mutate(direction_change = case_when(p.adj > 0.05 ~ "Unchanged", p.adj < 0.05 & fc > 0 ~ "After fasting", p.adj < 0.05 & fc < -0 ~ "Before")) %>% data.frame() %>% filter(mOTU_number %in% motus_cazy$mOTU_ID) ## We don't have CAZy data for about 200 mOTUs, but it is what it is.
+
+metadata_taxa$Family <- metadata_taxa$mOTU
+metadata_taxa$Family <- gsub("\\|g__.*", "", metadata_taxa$Family)
+metadata_taxa$Genus <- metadata_taxa$mOTU
+metadata_taxa$Genus <- gsub("\\|s__.*", "", metadata_taxa$Genus)
+rownames(metadata_taxa) <- metadata_taxa$mOTU_number
+sampledata_taxa <- phyloseq::sample_data(metadata_taxa)
+
+## Investigate genus-specific CAZymes
+motus_cazy_genus <- motus_cazy %>% select(-Genus) %>% filter(mOTU_ID %in% metadata_taxa$mOTU_number) %>% left_join(metadata_taxa %>% select(mOTU_number, Genus), by = c("mOTU_ID" = "mOTU_number"))
+
+## Here we use prevalence at mOTUs level to calcaulate prevalence at genus level and then filter out CAZymes that only have a prevalence > 0 in 1 genus
+motus_cazy_genus <- motus_cazy_genus %>% group_by(cazy_family, Genus) %>% mutate(prevalence_genus = mean(prevalence)) %>% ungroup()
+cazyme_genus_counts <- motus_cazy_genus %>% group_by(cazy_family) %>% summarise(Count_Genus = sum(prevalence > 0, na.rm = TRUE)) %>% ungroup()
+cazymes_to_remove <- cazyme_genus_counts %>% filter(Count_Genus <= 1)
+
+## Now abundance data is basically the CAZy matrix, start with genomic copies as a matrix, could eventually also try the prevalence
+motus_cazy_matrix <- motus_cazy %>% filter(mOTU_ID %in% metadata_taxa$mOTU_number) %>% select(1:3) %>% filter(cazy_family %nin% cazymes_to_remove$cazy_family) %>% pivot_wider(names_from = mOTU_ID, values_from = meanCopyNumber) %>% column_to_rownames("cazy_family") %>% as.matrix() 
+
+motus_cazy_matrix <- otu_table(motus_cazy_matrix, taxa_are_rows = TRUE)
+cazy_taxonomy_Mesnage_2023_ps <- phyloseq(motus_cazy_matrix, sampledata_taxa)
+```
+
+## Load all external datasets, starting with Maifeld_2021
+## Process taxonomic profiles of Maifeld
+```{r}
+mOTU_profiles_Maifeld_2021 <- readRDS(here("Profiles", "Maifeld_2021_res_mOTUs.rds")) %>% as.data.frame() %>% rownames_to_column('taxon') %>% pivot_longer(-taxon) %>% rename(sampleID = name, Counts = value)
+
+mOTU_profiles_Maifeld_2021_combined <- mOTU_profiles_Maifeld_2021 %>% mutate(sampleID_new = str_remove(sampleID,".singles")) %>% group_by(taxon, sampleID_new) %>% mutate(Counts = sum(Counts)) %>% ungroup() %>% select(-sampleID) %>% distinct() %>% pivot_wider(names_from = sampleID_new, values_from = Counts) %>% column_to_rownames("taxon") %>% as.matrix()
+```
+
+## Taxonomy table construction
+```{r}
+unassigned_cat <- t(as.data.frame(rep(c("unassigned"), each = 8))) %>% as.data.frame() %>% dplyr::rename(Kingdom = 1, Phylum = 2, Class = 3 , Order = 4, Family = 5, Genus = 6, Species = 7, mOTU_number = 8)
+mOTU_profiles_Maifeld_2021_taxonomy <- as.data.frame(rownames(mOTU_profiles_Maifeld_2021_combined)) %>% rename("Full_taxonomy" =  1)
+mOTU_profiles_Maifeld_2021_taxonomy <- mOTU_profiles_Maifeld_2021_taxonomy %>% filter(Full_taxonomy != "unassigned") %>% tidyr::separate_wider_delim(Full_taxonomy, "|", names = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species", "mOTU_number")) %>% add_row(unassigned_cat)
+## Now add back in the full mOTUs name for proper matching
+mOTU_profiles_Maifeld_2021_taxonomy <- mOTU_profiles_Maifeld_2021_taxonomy %>% mutate(full_mOTUs_name = rownames(mOTU_profiles_Maifeld_2021_combined)) %>% column_to_rownames(var = "full_mOTUs_name") %>% as.matrix()
+```
+
+## Metadata matching and phyloseq construction / cleanup
+```{r}
+Maifeld_2021_SRA <- read_delim(here("Metadata", "Maifeld_2021_SRA_metadata.txt"))
+Maifeld_2021_SRA <- Maifeld_2021_SRA %>% filter(`Assay Type` == "WGS")
+
+## Now prepare for phyloseq
+Maifeld_2021_SRA$Visit <- gsub(".*_(V[1-3])_.*", "\\1", Maifeld_2021_SRA$`Library Name`)
+Maifeld_2021_SRA <- Maifeld_2021_SRA %>% mutate(Timepoint = case_when(
+    Visit == "V1" ~ 0,
+    Visit == "V2" ~ 7,
+    Visit == "V3" ~ 98)) %>% as.data.frame() ## This should be 90 days, but for the stability plot set to 93
+rownames(Maifeld_2021_SRA) <- Maifeld_2021_SRA$Run
+metadata_full_taxonomy_Maifeld_2021_ps <- phyloseq::sample_data(Maifeld_2021_SRA)
+
+class(mOTU_profiles_Maifeld_2021_combined) <- "numeric"
+OTU_Maifeld_2021 <- otu_table(mOTU_profiles_Maifeld_2021_combined, taxa_are_rows = TRUE)
+TAX_Maifeld_2021 <- tax_table(mOTU_profiles_Maifeld_2021_taxonomy)
+
+Maifeld_2021_tax_ps <- phyloseq(OTU_Maifeld_2021, TAX_Maifeld_2021, metadata_full_taxonomy_Maifeld_2021_ps)
+
+## Make a phyloseq object with unassigned counts removed for diversity analyses
+remove_unassigned <- "unassigned"
+Maifeld_2021_tax_ps_unassigned_removed <- Maifeld_2021_tax_ps
+Maifeld_2021_tax_ps_unassigned_removed@otu_table <- Maifeld_2021_tax_ps_unassigned_removed@otu_table[!rownames(Maifeld_2021_tax_ps_unassigned_removed@otu_table) %in% remove_unassigned, ]
+
+## Make rel abundance phyloseq, this should still include the unassigned category for rel abundance calculations!
+Maifeld_2021_tax_ps_rel_abun <- microbiome::transform(Maifeld_2021_tax_ps, "compositional")
+
+## Now remove the "unassigned category"
+Maifeld_2021_tax_ps_rel_abun@otu_table <- Maifeld_2021_tax_ps_rel_abun@otu_table[!rownames(Maifeld_2021_tax_ps_rel_abun@otu_table) %in% remove_unassigned, ]
+Maifeld_2021_tax_ps_rel_abun@tax_table <- Maifeld_2021_tax_ps_rel_abun@tax_table[!rownames(Maifeld_2021_tax_ps_rel_abun@tax_table) %in% remove_unassigned, ]
+```
+## CAZy Maifeld
+```{r}
+CAZy_Maifeld_2021 <- read_delim(here("Profiles", "Maifeld_2021_collated.feature.combined_rpkm.txt.gz"))
+CAZy_Maifeld_2021 <- CAZy_Maifeld_2021 %>% filter(feature != "total_reads" & feature != "filtered_reads" & feature != "category") %>% mutate_if(is.numeric , replace_na, replace = 0) %>% column_to_rownames("feature") %>% as.matrix()
+CAZy_Maifeld_2021_otu_table <- otu_table(CAZy_Maifeld_2021, taxa_are_rows = TRUE)
+
+CAZy_Maifeld_2021_ps <- phyloseq(CAZy_Maifeld_2021_otu_table, metadata_full_taxonomy_Maifeld_2021_ps)
+```
+## KO abundances
+```{r}
+KO_Maifeld_2021 <- read_delim(here("Profiles", "Maifeld_2021_collated.KEGG_ko.combined_scaled.txt.gz"))
+normalized_counts_long <- KO_Maifeld_2021 %>% as.data.frame() %>% pivot_longer(!feature, names_to = "SampleID", values_to = "Count") %>% mutate(Count = replace_na(Count, 0)) %>% group_by(SampleID) %>% filter(feature!= "total_reads" & feature != "category") %>% mutate(filtered_reads_value = Count[feature == "filtered_reads"]) %>% group_by(SampleID) %>% mutate(Normalized_Count = Count / filtered_reads_value) %>% ungroup() %>% select(-c(Count, filtered_reads_value)) %>% filter(feature!= "filtered_reads")
+
+normalized_counts_long$feature <- gsub("ko:", "", normalized_counts_long$feature)
+normalized_counts_prokaryotic_long <- normalized_counts_long %>% filter(feature %in% prokaryotic_KOs$X1)
+normalized_counts_prokaryotic_matrix <- normalized_counts_prokaryotic_long %>% pivot_wider(names_from = SampleID, values_from = Normalized_Count) %>% column_to_rownames("feature") %>% as.matrix()
+KO_Maifeld_2021_otu_table <- otu_table(normalized_counts_prokaryotic_matrix, taxa_are_rows = TRUE)
+
+## Now build a phyloseq object from this
+ko_Maifeld_2021_ps <- phyloseq(KO_Maifeld_2021_otu_table, metadata_full_taxonomy_Maifeld_2021_ps)
+```
+
+## Obtain Gut Metabolic Modules (GMM) abundances based on the KO profiles
+```{r}
+## Need to slightly adapt the matrix layout to be in proper format for GMM computing
+normalized_counts_for_gmms <- normalized_counts_prokaryotic_long %>% pivot_wider(names_from = SampleID, values_from = Normalized_Count)
+
+## Compute abundances
+db <- loadDB("GMMs.v1.07")
+GMMs <- rpm(normalized_counts_for_gmms, module.db = db)
+GMMs_df <- asDataFrame(GMMs, "abundance")
+
+## Put into phyloseq object
+GMMs_matrix <- GMMs_df %>% select(-Module) %>% column_to_rownames("Description")
+GMM_Maifeld_2021_otu_table <- otu_table(GMMs_matrix, taxa_are_rows = TRUE)
+gmm_Maifeld_2021_ps <- phyloseq(GMM_Maifeld_2021_otu_table, metadata_full_taxonomy_Maifeld_2021_ps)
+```
+
+## External datasets loading for which we only computed taxonomic profiles
+```{r}
+## Start with Palleja, Using shotgun sequencing-based metagenomics, we analysed the partial eradication and subsequent regrowth of the gut microbiota in 12 healthy men over a 6-month period following a 4-day intervention with a cocktail of 3 last-resort antibiotics: meropenem, gentamicin and vancomycin.
+meta_Palleja_2019 <- read_tsv(here("Metadata", "meta_palleja.tsv")) %>% as.data.frame()
+mOTU_profiles_Palleja_2019 <- readRDS(here("Profiles", "Palleja_2019_res_mOTUs.rds")) %>% as.data.frame() %>% rownames_to_column('taxon') %>% pivot_longer(-taxon) %>% dplyr::rename(sampleID = name, Counts = value)
+
+motu_sums_per_sample <- mOTU_profiles_Palleja_2019 %>% group_by(sampleID) %>% summarise(sum_motus_counts = sum(Counts)) ## Lowest number is over 6k counts, so all good there, no need for additional filtering.
+
+mOTU_profiles_Palleja_2019_combined <- mOTU_profiles_Palleja_2019 %>% mutate(sampleID_new = str_remove(sampleID,".singles")) %>% group_by(taxon, sampleID_new) %>% mutate(Counts = sum(Counts)) %>% ungroup() %>% select(-sampleID) %>% distinct() %>% pivot_wider(names_from = sampleID_new, values_from = Counts) %>% column_to_rownames("taxon") %>% as.matrix()
+
+unassigned_cat <- t(as.data.frame(rep(c("unassigned"), each = 8))) %>% as.data.frame() %>% dplyr::rename(Kingdom = 1, Phylum = 2, Class = 3 , Order = 4, Family = 5, Genus = 6, Species = 7, mOTU_number = 8)
+mOTU_profiles_Palleja_2019_taxonomy <- as.data.frame(rownames(mOTU_profiles_Palleja_2019_combined)) %>% dplyr::rename("Full_taxonomy" =  1)
+mOTU_profiles_Palleja_2019_taxonomy <- mOTU_profiles_Palleja_2019_taxonomy %>% filter(Full_taxonomy != "unassigned") %>% tidyr::separate_wider_delim(Full_taxonomy, "|", names = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species", "mOTU_number")) %>% add_row(unassigned_cat)
+## Now add back in the full mOTUs name for proper matching
+mOTU_profiles_Palleja_2019_taxonomy <- mOTU_profiles_Palleja_2019_taxonomy %>% mutate(full_mOTUs_name = rownames(mOTU_profiles_Palleja_2019_combined)) %>% column_to_rownames(var = "full_mOTUs_name") %>% as.matrix()
+
+rownames(meta_Palleja_2019) <- meta_Palleja_2019$Sample_ID
+metadata_full_taxonomy_Palleja_2019_ps <- phyloseq::sample_data(meta_Palleja_2019)
+
+class(mOTU_profiles_Palleja_2019_combined) <- "numeric"
+OTU_Palleja_2019 <- otu_table(mOTU_profiles_Palleja_2019_combined, taxa_are_rows = TRUE)
+TAX_Palleja_2019 <- tax_table(mOTU_profiles_Palleja_2019_taxonomy)
+
+Palleja_2019_tax_ps <- phyloseq(OTU_Palleja_2019, TAX_Palleja_2019, metadata_full_taxonomy_Palleja_2019_ps)
+remove_unassigned <- "unassigned"
+Palleja_2019_tax_ps_unassigned_removed <- Palleja_2019_tax_ps
+Palleja_2019_tax_ps_unassigned_removed@otu_table <- Palleja_2019_tax_ps_unassigned_removed@otu_table[!rownames(Palleja_2019_tax_ps_unassigned_removed@otu_table) %in% remove_unassigned, ]
+
+## Make rel abundance phyloseq, this should still include the unassigned category for rel abundance calculations!
+Palleja_2019_tax_ps_rel_abun <- microbiome::transform(Palleja_2019_tax_ps, "compositional")
+
+## Now remove the "unassigned category"
+Palleja_2019_tax_ps_rel_abun@otu_table <- Palleja_2019_tax_ps_rel_abun@otu_table[!rownames(Palleja_2019_tax_ps_rel_abun@otu_table) %in% remove_unassigned, ]
+Palleja_2019_tax_ps_rel_abun@tax_table <- Palleja_2019_tax_ps_rel_abun@tax_table[!rownames(Palleja_2019_tax_ps_rel_abun@tax_table) %in% remove_unassigned, ]
+
+
+## Poyet, this is shotgun data from 84 healthy individuals that donated, have to see how to bin these timepoints to get some representative data. Discuss with Georg, I'd suggest maybe 5-6 timepoints and then have a range of +- 2 days or so.
+meta_Poyet_2019 <- read_tsv(here("Metadata", "meta_poyet.tsv")) %>% mutate(Timepoint = as.numeric(Timepoint)) %>% mutate(Timepoint = case_when(
+    Timepoint < 7 ~ 0,
+    Timepoint >= 7 & Timepoint <= 21 ~ 14,
+    Timepoint >= 22 & Timepoint <= 35 ~ 28,
+    Timepoint >= 36 & Timepoint <= 50 ~ 42,
+    Timepoint >= 63 & Timepoint <= 77 ~ 70,
+    TRUE ~ Timepoint
+  )) %>% group_by(Individual_ID, Timepoint) %>% slice_sample(n = 1) %>% ungroup() %>% group_by(Individual_ID) %>% filter(any(Timepoint == 0)) %>% ungroup() %>% filter(!(Timepoint >= 78)) %>% filter(!(Timepoint >= 50 & Timepoint <= 63)) %>% as.data.frame()
+
+mOTU_profiles_Poyet_2019 <- readRDS(here("Profiles", "Poyet_2019_res_mOTUs.rds")) %>% as.data.frame() %>% rownames_to_column('taxon') %>% pivot_longer(-taxon) %>% dplyr::rename(sampleID = name, Counts = value) ## kick out samples < 500 mOTU counts
+
+motu_sums_per_sample <- mOTU_profiles_Poyet_2019 %>% group_by(sampleID) %>% summarise(sum_motus_counts = sum(Counts)) ## Lowest number is over 6k counts, so all good there, no need for additional filtering.
+
+samples_to_remove_Poyet_2019 <- motu_sums_per_sample %>% filter(sum_motus_counts < 500) %>% distinct(sampleID)
+
+mOTU_profiles_Poyet_2019_combined <- mOTU_profiles_Poyet_2019 %>% filter(sampleID %nin% samples_to_remove_Poyet_2019$sampleID) %>% mutate(sampleID_new = str_remove(sampleID,".singles")) %>% group_by(taxon, sampleID_new) %>% mutate(Counts = sum(Counts)) %>% ungroup() %>% select(-sampleID) %>% distinct() %>% pivot_wider(names_from = sampleID_new, values_from = Counts) %>% column_to_rownames("taxon") %>% as.matrix()
+
+unassigned_cat <- t(as.data.frame(rep(c("unassigned"), each = 8))) %>% as.data.frame() %>% dplyr::rename(Kingdom = 1, Phylum = 2, Class = 3 , Order = 4, Family = 5, Genus = 6, Species = 7, mOTU_number = 8)
+mOTU_profiles_Poyet_2019_taxonomy <- as.data.frame(rownames(mOTU_profiles_Poyet_2019_combined)) %>% dplyr::rename("Full_taxonomy" =  1)
+mOTU_profiles_Poyet_2019_taxonomy <- mOTU_profiles_Poyet_2019_taxonomy %>% filter(Full_taxonomy != "unassigned") %>% tidyr::separate_wider_delim(Full_taxonomy, "|", names = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species", "mOTU_number")) %>% add_row(unassigned_cat)
+## Now add back in the full mOTUs name for proper matching
+mOTU_profiles_Poyet_2019_taxonomy <- mOTU_profiles_Poyet_2019_taxonomy %>% mutate(full_mOTUs_name = rownames(mOTU_profiles_Poyet_2019_combined)) %>% column_to_rownames(var = "full_mOTUs_name") %>% as.matrix()
+
+rownames(meta_Poyet_2019) <- meta_Poyet_2019$Sample_ID
+metadata_full_taxonomy_Poyet_2019_ps <- phyloseq::sample_data(meta_Poyet_2019)
+
+class(mOTU_profiles_Poyet_2019_combined) <- "numeric"
+OTU_Poyet_2019 <- otu_table(mOTU_profiles_Poyet_2019_combined, taxa_are_rows = TRUE)
+TAX_Poyet_2019 <- tax_table(mOTU_profiles_Poyet_2019_taxonomy)
+
+Poyet_2019_tax_ps <- phyloseq(OTU_Poyet_2019, TAX_Poyet_2019, metadata_full_taxonomy_Poyet_2019_ps)
+remove_unassigned <- "unassigned"
+Poyet_2019_tax_ps_unassigned_removed <- Poyet_2019_tax_ps
+Poyet_2019_tax_ps_unassigned_removed@otu_table <- Poyet_2019_tax_ps_unassigned_removed@otu_table[!rownames(Poyet_2019_tax_ps_unassigned_removed@otu_table) %in% remove_unassigned, ]
+
+## Make rel abundance phyloseq, this should still include the unassigned category for rel abundance calculations!
+Poyet_2019_tax_ps_rel_abun <- microbiome::transform(Poyet_2019_tax_ps, "compositional")
+
+## Now remove the "unassigned category"
+Poyet_2019_tax_ps_rel_abun@otu_table <- Poyet_2019_tax_ps_rel_abun@otu_table[!rownames(Poyet_2019_tax_ps_rel_abun@otu_table) %in% remove_unassigned, ]
+Poyet_2019_tax_ps_rel_abun@tax_table <- Poyet_2019_tax_ps_rel_abun@tax_table[!rownames(Poyet_2019_tax_ps_rel_abun@tax_table) %in% remove_unassigned, ]
+
+## Roager 
+Roager_2019 <- read_delim(here("Metadata", "Roager_2019_SRA_Metadata.txt"))
+Roager_2019 <- Roager_2019 %>% filter(`Assay Type` == "WGS") %>% mutate(Timepoint = `Sample Name`) %>% mutate(Timepoint = gsub(".*_", "", Timepoint)) %>% as.data.frame() %>% mutate(Substudy = case_when((Diet == "a" & Timepoint <= 2.1 ) ~ "Whole_Grain_1",
+                 (Diet == "a" & Timepoint > 2.1 ) ~ "Whole_Grain_2",
+                 (Diet == "b" & Timepoint <= 2.1 ) ~ "Refined_Grain_1",
+                 (Diet == "b" & Timepoint > 2.1 ) ~ "Refined_Grain_2"))
+
+Roager_2019$Substudy <- as.factor(Roager_2019$Substudy)
+Roager_2019 <- Roager_2019 %>% mutate(Artificial_timepoint = case_when((Timepoint == 1) ~ 1,
+                 (Timepoint == 2) ~ 2,
+                 (Timepoint == 3 ) ~ 1,
+                 (Timepoint == 4 ) ~ 2))
+Roager_2019 <- Roager_2019 %>% mutate(Time_in_days = case_when((Artificial_timepoint == 1) ~ 0,
+                 (Artificial_timepoint == 2) ~ 56)) ## %>% filter(Individual != "5339" & Individual != "5338")
+
+Roager_2019$Grouped_substudies <- Roager_2019$Substudy
+Roager_2019$Grouped_substudies <- gsub("_.*", "", Roager_2019$Grouped_substudies)
+Roager_2019$Grouped_substudies <- as.factor(Roager_2019$Grouped_substudies)
+Roager_2019$Timepoint_factor <- as.factor(as.character(Roager_2019$Timepoint))
+#Roager_2019$Artifical_timepoint <- as.factor(as.character(Roager_2019$Artifical_timepoint))
+
+mOTU_profiles_Roager_2019 <- readRDS('../Profiles/Roager_2019_res_mOTUs.rds') %>% as.data.frame() %>% rownames_to_column('taxon') %>% pivot_longer(-taxon) %>% dplyr::rename(sampleID = name, Counts = value)
+
+motu_sums_per_sample <- mOTU_profiles_Roager_2019 %>% group_by(sampleID) %>% summarise(sum_motus_counts = sum(Counts)) ## Lowest number is over 6k counts, so all good there, no need for additional filtering.
+
+mOTU_profiles_Roager_2019_combined <- mOTU_profiles_Roager_2019 %>% mutate(sampleID_new = str_remove(sampleID,".singles")) %>% group_by(taxon, sampleID_new) %>% mutate(Counts = sum(Counts)) %>% ungroup() %>% select(-sampleID) %>% distinct() %>% pivot_wider(names_from = sampleID_new, values_from = Counts) %>% column_to_rownames("taxon") %>% as.matrix()
+
+unassigned_cat <- t(as.data.frame(rep(c("unassigned"), each = 8))) %>% as.data.frame() %>% dplyr::rename(Kingdom = 1, Phylum = 2, Class = 3 , Order = 4, Family = 5, Genus = 6, Species = 7, mOTU_number = 8)
+mOTU_profiles_Roager_2019_taxonomy <- as.data.frame(rownames(mOTU_profiles_Roager_2019_combined)) %>% dplyr::rename("Full_taxonomy" =  1)
+mOTU_profiles_Roager_2019_taxonomy <- mOTU_profiles_Roager_2019_taxonomy %>% filter(Full_taxonomy != "unassigned") %>% tidyr::separate_wider_delim(Full_taxonomy, "|", names = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species", "mOTU_number")) %>% add_row(unassigned_cat)
+## Now add back in the full mOTUs name for proper matching
+mOTU_profiles_Roager_2019_taxonomy <- mOTU_profiles_Roager_2019_taxonomy %>% mutate(full_mOTUs_name = rownames(mOTU_profiles_Roager_2019_combined)) %>% column_to_rownames(var = "full_mOTUs_name") %>% as.matrix()
+
+rownames(Roager_2019) <- Roager_2019$Run
+metadata_full_taxonomy_Roager_2019_ps <- phyloseq::sample_data(Roager_2019)
+
+class(mOTU_profiles_Roager_2019_combined) <- "numeric"
+OTU_Roager_2019 <- otu_table(mOTU_profiles_Roager_2019_combined, taxa_are_rows = TRUE)
+TAX_Roager_2019 <- tax_table(mOTU_profiles_Roager_2019_taxonomy)
+
+Roager_2019_tax_ps <- phyloseq(OTU_Roager_2019, TAX_Roager_2019, metadata_full_taxonomy_Roager_2019_ps)
+remove_unassigned <- "unassigned"
+Roager_2019_tax_ps_unassigned_removed <- Roager_2019_tax_ps
+Roager_2019_tax_ps_unassigned_removed@otu_table <- Roager_2019_tax_ps_unassigned_removed@otu_table[!rownames(Roager_2019_tax_ps_unassigned_removed@otu_table) %in% remove_unassigned, ]
+
+## Make rel abundance phyloseq, this should still include the unassigned category for rel abundance calculations!
+Roager_2019_tax_ps_rel_abun <- microbiome::transform(Roager_2019_tax_ps, "compositional")
+
+## Now remove the "unassigned category"
+Roager_2019_tax_ps_rel_abun@otu_table <- Roager_2019_tax_ps_rel_abun@otu_table[!rownames(Roager_2019_tax_ps_rel_abun@otu_table) %in% remove_unassigned, ]
+Roager_2019_tax_ps_rel_abun@tax_table <- Roager_2019_tax_ps_rel_abun@tax_table[!rownames(Roager_2019_tax_ps_rel_abun@tax_table) %in% remove_unassigned, ]
+
+## Olsson 2022, Examinations were performed every third month +/- 2 weeks in the first year. All individuals fasted overnight (at least 8 hours) before
+#the visits. Individuals underwent the same examinations at each visit, including measurements of body weight, waist and hip circumference, body fat #using bioimpedance, and blood pressure as previously described
+
+Olsson_2022 <- read_delim(here("Metadata", "Olsson_2022_SRA_Metadata.txt"))
+Olsson_2022 <- Olsson_2022 %>% filter(`Assay Type` == "WGS") %>% mutate(Timepoint = Sample_Name) %>% mutate(Timepoint = gsub(".*_v", "", Timepoint)) %>% mutate(Individual_ID = Sample_Name) %>% mutate(Individual_ID = gsub("_.*", "", Individual_ID)) %>% mutate(Timepoint_days = case_when((Timepoint == 1) ~ 0,
+                 (Timepoint == 2) ~ 90,
+                 (Timepoint == 3 ) ~ 180,
+                 (Timepoint == 4 ) ~ 270)) %>% as.data.frame()
+
+mOTU_profiles_Olsson_2022 <- readRDS(here("Profiles", "Olsson_2022_res_mOTUs.rds")) %>% as.data.frame() %>% rownames_to_column('taxon') %>% pivot_longer(-taxon) %>% dplyr::rename(sampleID = name, Counts = value)
+
+motu_sums_per_sample <- mOTU_profiles_Olsson_2022 %>% group_by(sampleID) %>% summarise(sum_motus_counts = sum(Counts)) ## Lowest number is over 4.5k counts, so all good there, no need for additional filtering.
+
+mOTU_profiles_Olsson_2022_combined <- mOTU_profiles_Olsson_2022 %>% mutate(sampleID_new = str_remove(sampleID,".singles")) %>% group_by(taxon, sampleID_new) %>% mutate(Counts = sum(Counts)) %>% ungroup() %>% select(-sampleID) %>% distinct() %>% pivot_wider(names_from = sampleID_new, values_from = Counts) %>% column_to_rownames("taxon") %>% as.matrix()
+
+unassigned_cat <- t(as.data.frame(rep(c("unassigned"), each = 8))) %>% as.data.frame() %>% dplyr::rename(Kingdom = 1, Phylum = 2, Class = 3 , Order = 4, Family = 5, Genus = 6, Species = 7, mOTU_number = 8)
+mOTU_profiles_Olsson_2022_taxonomy <- as.data.frame(rownames(mOTU_profiles_Olsson_2022_combined)) %>% dplyr::rename("Full_taxonomy" =  1)
+mOTU_profiles_Olsson_2022_taxonomy <- mOTU_profiles_Olsson_2022_taxonomy %>% filter(Full_taxonomy != "unassigned") %>% tidyr::separate_wider_delim(Full_taxonomy, "|", names = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species", "mOTU_number")) %>% add_row(unassigned_cat)
+## Now add back in the full mOTUs name for proper matching
+mOTU_profiles_Olsson_2022_taxonomy <- mOTU_profiles_Olsson_2022_taxonomy %>% mutate(full_mOTUs_name = rownames(mOTU_profiles_Olsson_2022_combined)) %>% column_to_rownames(var = "full_mOTUs_name") %>% as.matrix()
+
+rownames(Olsson_2022) <- Olsson_2022$Run
+metadata_full_taxonomy_Olsson_2022_ps <- phyloseq::sample_data(Olsson_2022)
+
+class(mOTU_profiles_Olsson_2022_combined) <- "numeric"
+OTU_Olsson_2022 <- otu_table(mOTU_profiles_Olsson_2022_combined, taxa_are_rows = TRUE)
+TAX_Olsson_2022 <- tax_table(mOTU_profiles_Olsson_2022_taxonomy)
+
+Olsson_2022_tax_ps <- phyloseq(OTU_Olsson_2022, TAX_Olsson_2022, metadata_full_taxonomy_Olsson_2022_ps)
+remove_unassigned <- "unassigned"
+Olsson_2022_tax_ps_unassigned_removed <- Olsson_2022_tax_ps
+Olsson_2022_tax_ps_unassigned_removed@otu_table <- Olsson_2022_tax_ps_unassigned_removed@otu_table[!rownames(Olsson_2022_tax_ps_unassigned_removed@otu_table) %in% remove_unassigned, ]
+
+## Make rel abundance phyloseq, this should still include the unassigned category for rel abundance calculations!
+Olsson_2022_tax_ps_rel_abun <- microbiome::transform(Olsson_2022_tax_ps, "compositional")
+
+## Now remove the "unassigned category"
+Olsson_2022_tax_ps_rel_abun@otu_table <- Olsson_2022_tax_ps_rel_abun@otu_table[!rownames(Olsson_2022_tax_ps_rel_abun@otu_table) %in% remove_unassigned, ]
+Olsson_2022_tax_ps_rel_abun@tax_table <- Olsson_2022_tax_ps_rel_abun@tax_table[!rownames(Olsson_2022_tax_ps_rel_abun@tax_table) %in% remove_unassigned, ]
+```
+
+## Make 1 phyloseq with Mesnage and Maifeld to be able to do a meta-analysis
+```{r}
+## First harmonize metadata
+Mesnage_2023_metadata_to_join <- Mesnage_2023_metadata %>% select(sample.id, Study_Patient, Timepoint) %>% mutate(Study = "Mesnage_2023")
+Maifeld_2021_metadata_to_join <- Maifeld_2021_SRA %>% select(Run, host_subject_id, Visit) %>% rename("sample.id" = Run, "Study_Patient" = host_subject_id, "Timepoint" = Visit) %>% mutate(Study = "Maifeld_2021")
+Maifeld_2021_metadata_to_join$Timepoint <- gsub("V1", "Before", Maifeld_2021_metadata_to_join$Timepoint)
+Maifeld_2021_metadata_to_join$Timepoint <- gsub("V2", "After", Maifeld_2021_metadata_to_join$Timepoint)
+Mesnage_Maifeld_joined_metadata <- rbind(Mesnage_2023_metadata_to_join, Maifeld_2021_metadata_to_join)
+
+## Now harmonize the count tables
+mOTU_profiles_Mesnage_Maifeld <- rbind(mOTU_profiles_Mesnage_2023, mOTU_profiles_Maifeld_2021)
+mOTU_profiles_Mesnage_Maifeld_combined <- mOTU_profiles_Mesnage_Maifeld %>% mutate(sampleID_new = str_remove(sampleID,".singles")) %>% group_by(taxon, sampleID_new) %>% mutate(Counts = sum(Counts)) %>% ungroup() %>% select(-sampleID) %>% distinct() %>% pivot_wider(names_from = sampleID_new, values_from = Counts) %>% column_to_rownames("taxon") %>% mutate(across(everything(), ~replace_na(.x, 0))) %>% as.matrix()
+
+## Build the phyloseq
+Mesnage_Maifeld_joined_metadata_ps <- phyloseq::sample_data(Mesnage_Maifeld_joined_metadata)
+class(mOTU_profiles_Mesnage_Maifeld_combined) <- "numeric"
+OTU_Mesnage_Maifeld <- otu_table(mOTU_profiles_Mesnage_Maifeld_combined, taxa_are_rows = TRUE)
+
+Mesnage_Maifeld_tax_ps <- phyloseq(OTU_Mesnage_Maifeld, Mesnage_Maifeld_joined_metadata_ps)
+
+## Make a phyloseq object with unassigned counts removed for diversity analyses
+remove_unassigned <- "unassigned"
+Mesnage_Maifeld_tax_ps_unassigned_removed <- Mesnage_Maifeld_tax_ps
+Mesnage_Maifeld_tax_ps_unassigned_removed@otu_table <- Mesnage_Maifeld_tax_ps_unassigned_removed@otu_table[!rownames(Mesnage_Maifeld_tax_ps_unassigned_removed@otu_table) %in% remove_unassigned, ]
+
+## Make rel abundance phyloseq, this should still include the unassigned category for rel abundance calculations!
+Mesnage_Maifeld_tax_ps_rel_abun <- microbiome::transform(Mesnage_Maifeld_tax_ps, "compositional")
+
+## Now remove the "unassigned category"
+Mesnage_Maifeld_tax_ps_rel_abun@otu_table <- Mesnage_Maifeld_tax_ps_rel_abun@otu_table[!rownames(Mesnage_Maifeld_tax_ps_rel_abun@otu_table) %in% remove_unassigned, ]
+```
+
+## Load serum metabolomics data
+```{r}
+genData_positive <- read.csv(here("Serum_Metabolite_Data", "Combined Peaks Pos.csv"))
+genData_negative <- read.csv(here("Serum_Metabolite_Data", "Combined Peaks Neg.csv"))
+genData_combined <- rbind(genData_positive, genData_negative)
+genData_meta <- read.csv(here("Serum_Metabolite_Data", "Combined Meta.csv"))
+```
+
+## Load Zeevi and Asnicar data
+```{r}
+library(ggquantileplot)
+library(curatedMetagenomicData)
+library(here)
+
+cmd_meta <- sampleMetadata
+control_studies <- c("AsnicarF_2021", "ZeeviD_2015") 
+profiled_controls_metadata <- cmd_meta %>% filter(body_site == "stool") %>% filter(study_name %in% control_studies) %>% filter(disease == "healthy")
+
+Zeevi_2015_metadata_SRA <- read_delim(here("../", "Metadata", "Zeevi_2015_SRA_Metadata.txt"))
+Zeevi_2015_mapping_file <- read_delim(here("../", "Metadata", "Zeevi_experiment_list.tsv"))
+Zeevi_2015_mapping_file_timepoint_0 <- Zeevi_2015_mapping_file %>% filter(timepoint == "0")
+Zeevi_2015_metadata_SRA_joined <- left_join(Zeevi_2015_metadata_SRA, Zeevi_2015_mapping_file_timepoint_0 %>% select(1:2), by = c("Run" = "experiment_name")) %>% drop_na(sample_alias) %>% filter(LibraryLayout == "PAIRED")
+## Only keep paired-end sequencing, since the single-end are generally pretty small files
+
+profiled_controls_metadata_Zeevi <- profiled_controls_metadata %>% filter(study_name == "ZeeviD_2015")
+profiled_controls_metadata_Zeevi <- profiled_controls_metadata_Zeevi %>% separate_rows(NCBI_accession, sep = ";") %>% filter(NCBI_accession %in% Zeevi_2015_metadata_SRA_joined$Run) ## There must be some double hits in here of samples that have been sequenced multiple times? This indeed turns out to be the case, so in these cases simply select the file with most bytes (most sequencing data). This can be done in the Zeevi_2015_metadata_SRA_joined object
+Zeevi_2015_metadata_SRA_joined <- Zeevi_2015_metadata_SRA_joined %>% group_by(BioSample) %>% dplyr::slice(which.max(Bytes)) %>% ungroup()
+profiled_controls_metadata_Zeevi <- profiled_controls_metadata_Zeevi %>% filter(NCBI_accession %in% Zeevi_2015_metadata_SRA_joined$Run)
+profiled_controls_metadata_Zeevi <- left_join(profiled_controls_metadata_Zeevi, Zeevi_2015_metadata_SRA_joined %>% select(Run, sample_alias), by = c("NCBI_accession" = "Run"))
+profiled_controls_metadata_Zeevi <- profiled_controls_metadata_Zeevi %>% mutate(sample_id = ifelse(study_name == "ZeeviD_2015", sample_alias, sample_id)) %>% as.data.frame()
+
+mOTU_profiles_Zeevi_2015 <- readRDS(here("..", "Profiles", "Zeevi_2015_res_mOTUs.rds")) %>% as.data.frame() %>% rownames_to_column('taxon') %>% pivot_longer(-taxon) %>% dplyr::rename("sampleID" = name, "Counts" = value)
+
+mOTU_profiles_Zeevi_2015_combined <- mOTU_profiles_Zeevi_2015 %>% mutate(sampleID_new = str_remove(sampleID,".singles")) %>% group_by(taxon, sampleID_new) %>% mutate(Counts = sum(Counts)) %>% ungroup() %>% filter(sampleID_new %in% profiled_controls_metadata_Zeevi$sample_id) %>% select(-sampleID) %>% distinct() %>% pivot_wider(names_from = sampleID_new, values_from = Counts) %>% column_to_rownames("taxon") %>% as.matrix()
+
+unassigned_cat <- t(as.data.frame(rep(c("unassigned"), each = 8))) %>% as.data.frame() %>% dplyr::rename(Kingdom = 1, Phylum = 2, Class = 3 , Order = 4, Family = 5, Genus = 6, Species = 7, mOTU_number = 8)
+mOTU_profiles_Zeevi_2015_taxonomy <- as.data.frame(rownames(mOTU_profiles_Zeevi_2015_combined)) %>% dplyr::rename("Full_taxonomy" =  1)
+mOTU_profiles_Zeevi_2015_taxonomy <- mOTU_profiles_Zeevi_2015_taxonomy %>% filter(Full_taxonomy != "unassigned") %>% tidyr::separate_wider_delim(Full_taxonomy, "|", names = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species", "mOTU_number")) %>% add_row(unassigned_cat)
+## Now add back in the full mOTUs name for proper matching
+mOTU_profiles_Zeevi_2015_taxonomy <- mOTU_profiles_Zeevi_2015_taxonomy %>% mutate(full_mOTUs_name = rownames(mOTU_profiles_Zeevi_2015_combined)) %>% column_to_rownames(var = "full_mOTUs_name") %>% as.matrix()
+
+rownames(profiled_controls_metadata_Zeevi) <- profiled_controls_metadata_Zeevi$sample_id
+metadata_full_taxonomy_Zeevi_2015_ps <- phyloseq::sample_data(profiled_controls_metadata_Zeevi)
+
+class(mOTU_profiles_Zeevi_2015_combined) <- "numeric"
+OTU_Zeevi_2015 <- otu_table(mOTU_profiles_Zeevi_2015_combined, taxa_are_rows = TRUE)
+TAX_Zeevi_2015 <- tax_table(mOTU_profiles_Zeevi_2015_taxonomy)
+
+Zeevi_2015_tax_ps <- phyloseq(OTU_Zeevi_2015, TAX_Zeevi_2015, metadata_full_taxonomy_Zeevi_2015_ps)
+
+remove_unassigned <- "unassigned"
+Zeevi_2015_tax_ps_unassigned_removed <- Zeevi_2015_tax_ps
+Zeevi_2015_tax_ps_unassigned_removed@otu_table <- Zeevi_2015_tax_ps_unassigned_removed@otu_table[!rownames(Zeevi_2015_tax_ps_unassigned_removed@otu_table) %in% remove_unassigned, ]
+
+## Make rel abundance phyloseq, this should still include the unassigned category for rel abundance calculations!
+Zeevi_2015_tax_ps_rel_abun <- microbiome::transform(Zeevi_2015_tax_ps, "compositional")
+## Now remove the "unassigned category"
+Zeevi_2015_tax_ps_rel_abun@otu_table <- Zeevi_2015_tax_ps_rel_abun@otu_table[!rownames(Zeevi_2015_tax_ps_rel_abun@otu_table) %in% remove_unassigned, ]
+Zeevi_2015_tax_ps_rel_abun@tax_table <- Zeevi_2015_tax_ps_rel_abun@tax_table[!rownames(Zeevi_2015_tax_ps_rel_abun@tax_table) %in% remove_unassigned, ]
+
+## Process Asnicar data
+profiled_controls_metadata_Asnicar <- profiled_controls_metadata %>% filter(study_name == "AsnicarF_2021") ## We don't have profiles for all Asnicar samples, but not sure if that is an issue anyway
+profiled_controls_metadata_Asnicar_2021 <- profiled_controls_metadata_Asnicar %>% mutate(sample_id = ifelse(study_name == "AsnicarF_2021", NCBI_accession, sample_id))
+
+mOTU_profiles_Asnicar_2021 <- readRDS(here("..", "Profiles", "Asnicar_2021_res_mOTUs.rds")) %>% as.data.frame() %>% rownames_to_column('taxon') %>% pivot_longer(-taxon) %>% dplyr::rename("sampleID" = name, "Counts" = value)
+
+mOTU_profiles_Asnicar_2021_combined <- mOTU_profiles_Asnicar_2021 %>% mutate(sampleID_new = str_remove(sampleID,".singles")) %>% group_by(taxon, sampleID_new) %>% mutate(Counts = sum(Counts)) %>% ungroup() %>% filter(sampleID_new %in% profiled_controls_metadata_Asnicar_2021$sample_id) %>% select(-sampleID) %>% distinct() %>% pivot_wider(names_from = sampleID_new, values_from = Counts) %>% column_to_rownames("taxon") %>% as.matrix()
+
+unassigned_cat <- t(as.data.frame(rep(c("unassigned"), each = 8))) %>% as.data.frame() %>% dplyr::rename(Kingdom = 1, Phylum = 2, Class = 3 , Order = 4, Family = 5, Genus = 6, Species = 7, mOTU_number = 8)
+mOTU_profiles_Asnicar_2021_taxonomy <- as.data.frame(rownames(mOTU_profiles_Asnicar_2021_combined)) %>% dplyr::rename("Full_taxonomy" =  1)
+mOTU_profiles_Asnicar_2021_taxonomy <- mOTU_profiles_Asnicar_2021_taxonomy %>% filter(Full_taxonomy != "unassigned") %>% tidyr::separate_wider_delim(Full_taxonomy, "|", names = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species", "mOTU_number")) %>% add_row(unassigned_cat)
+## Now add back in the full mOTUs name for proper matching
+mOTU_profiles_Asnicar_2021_taxonomy <- mOTU_profiles_Asnicar_2021_taxonomy %>% mutate(full_mOTUs_name = rownames(mOTU_profiles_Asnicar_2021_combined)) %>% column_to_rownames(var = "full_mOTUs_name") %>% as.matrix()
+
+rownames(profiled_controls_metadata_Asnicar_2021) <- profiled_controls_metadata_Asnicar_2021$sample_id
+metadata_full_taxonomy_Asnicar_2021_ps <- phyloseq::sample_data(profiled_controls_metadata_Asnicar_2021)
+
+class(mOTU_profiles_Asnicar_2021_combined) <- "numeric"
+OTU_Asnicar_2021 <- otu_table(mOTU_profiles_Asnicar_2021_combined, taxa_are_rows = TRUE)
+TAX_Asnicar_2021 <- tax_table(mOTU_profiles_Asnicar_2021_taxonomy)
+
+Asnicar_2021_tax_ps <- phyloseq(OTU_Asnicar_2021, TAX_Asnicar_2021, metadata_full_taxonomy_Asnicar_2021_ps)
+
+remove_unassigned <- "unassigned"
+Asnicar_2021_tax_ps_unassigned_removed <- Asnicar_2021_tax_ps
+Asnicar_2021_tax_ps_unassigned_removed@otu_table <- Asnicar_2021_tax_ps_unassigned_removed@otu_table[!rownames(Asnicar_2021_tax_ps_unassigned_removed@otu_table) %in% remove_unassigned, ]
+
+## Make rel abundance phyloseq, this should still include the unassigned category for rel abundance calculations!
+Asnicar_2021_tax_ps_rel_abun <- microbiome::transform(Asnicar_2021_tax_ps, "compositional")
+## Now remove the "unassigned category"
+Asnicar_2021_tax_ps_rel_abun@otu_table <- Asnicar_2021_tax_ps_rel_abun@otu_table[!rownames(Asnicar_2021_tax_ps_rel_abun@otu_table) %in% remove_unassigned, ]
+Asnicar_2021_tax_ps_rel_abun@tax_table <- Asnicar_2021_tax_ps_rel_abun@tax_table[!rownames(Asnicar_2021_tax_ps_rel_abun@tax_table) %in% remove_unassigned, ]
+```
+

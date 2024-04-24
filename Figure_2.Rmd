@@ -1,0 +1,359 @@
+---
+title: "Figure_2"
+author: "QD"
+date: "2024-01-04"
+output: html_document
+---
+
+## Figure 2A
+```{r}
+pcoa_info_ltfu <- ordinate(Mesnage_2023_tax_ps_rel_abun_4, method='PCoA', distance = 'bray')
+Fig_2A <- plot_ordination(Mesnage_2023_tax_ps_rel_abun_4, pcoa_info_ltfu, color="Timepoint") + scale_color_manual(values=c('#3B6FB6','#D41645','grey','orange')) + theme_publication() + theme(legend.position = "none") + xlab("PC1 [10.2%]") + ylab("PC2 [8.0%]")
+```
+
+## Figure 2B
+```{r}
+alpha_diversities <- estimate_richness(Mesnage_2023_tax_ps_unassigned_removed)
+alpha_diversities$SampleID <- rownames(alpha_diversities)
+meta_alpha_diversities <- alpha_diversities %>% left_join(Mesnage_2023_metadata, by = c("SampleID" = "sample.id"))
+
+shannon_df_lmer <- lmer(Shannon ~ Timepoint + (1|Study_Patient), data = meta_alpha_diversities)
+summary(shannon_df_lmer)
+
+## Hack p-values into the figure, the ones without any trend (p>0.1) can be removed I suppose
+threshold <- 0.001
+shannon_df_significance <- data.frame(summary(shannon_df_lmer)$coefficients) %>% rownames_to_column("group2") %>% filter(group2 != "(Intercept)") %>% mutate(group2 = gsub("Timepoint", "", group2)) %>% mutate(group1 = "Before") %>% rename("p_value" = 6) %>% select(group2, p_value, group1) %>% mutate(p_value = ifelse(p_value < threshold, format(p_value, scientific = TRUE, digits = 2), sprintf("%.3f", p_value))) %>% mutate(p_value = as.numeric(p_value)) #%>% mutate(p_value = replace(p_value, p_value > 0.1, NA)) #%>% mutate(p_value = format(p_value, scientific = TRUE, digits = 2)) 
+
+shannon_n_samples_per_timepoint <- meta_alpha_diversities %>% count(Timepoint)
+
+Fig_2B <- ggplot(meta_alpha_diversities) +
+  theme_publication() +
+  aes(x = Timepoint, y = Shannon) +
+  geom_boxplot(aes(fill = Timepoint), outlier.shape = NA, alpha = 0.8) +
+  geom_jitter(aes(col = Timepoint), position = position_jitterdodge(jitter.width = 0.1), alpha = 0.6) +
+  stat_pvalue_manual(shannon_df_significance, x = "group2", y.position = 5.4, label = "p_value", color = "black", size = 2) + ## color = "group2"
+  scale_fill_manual(values=c('#366eb2','#bc3f60','#b25336','#ffb452')) +
+  scale_color_manual(values=c('#366eb2','#bc3f60','#b25336','#ffb452')) +
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  ylab("Shannon diversity") +
+  geom_text(data = shannon_n_samples_per_timepoint %>% select(Timepoint, n), aes(x = Timepoint, y = 2.9, label = paste0("n=", n)), size = 2) +
+  theme(legend.position = "none")
+```
+
+## Figure 2C
+```{r}
+## Remove patients without baseline samples
+remove_patients <- microbiome::meta(Mesnage_2023_tax_ps_rel_abun_ltfu) %>% group_by(Study_Patient) %>% filter("Before" %in% Timepoint) %>% ungroup()
+Mesnage_2023_tax_ps_rel_abun_ltfu_bc <- Mesnage_2023_tax_ps_rel_abun_ltfu %>% ps_filter(Study_Patient %in% remove_patients$Study_Patient)
+
+columns <- c("sample.id", "BC_diss", "Study_Patient", "Timepoint") 
+df_bc_quantification <- data.frame(matrix(nrow = 0, ncol = length(columns))) 
+
+for (patient in unique(Mesnage_2023_tax_ps_rel_abun_ltfu_bc@sam_data$Study_Patient))
+{
+  patient_ps <- Mesnage_2023_tax_ps_rel_abun_ltfu_bc %>% ps_filter(Study_Patient == patient) %>% ps_arrange(Timepoint)
+  sample_metadata <- microbiome::meta(patient_ps)
+  baseline_samplename <- patient_ps %>% ps_filter(Timepoint == "Before") ##To verify we are really comparing everything to baseline samples
+  baseline_samplename <- baseline_samplename@sam_data$sample.id
+  patient_bc <- as.matrix(phyloseq::distance(patient_ps, method="bray", type="samples"))
+  patient_bc <- as.data.frame(patient_bc) %>% select(all_of(baseline_samplename))
+  patient_bc <- patient_bc %>% rownames_to_column("sample.id") %>% left_join(sample_metadata %>% select(sample.id, Study_Patient, Timepoint), by = "sample.id") %>% dplyr::rename(BC_diss = 2)
+  df_bc_quantification <- rbind(df_bc_quantification, patient_bc)
+}
+
+df_bc_quantification <- df_bc_quantification %>% mutate(Study = "Mesnage_2023")
+
+## Visualize the data
+bc_fup <- ggplot(df_bc_quantification %>% filter(Timepoint != "Before")) +
+  theme_classic() +
+  aes(x = Timepoint, y = BC_diss) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(alpha = 0.6) +
+  ylab("Bray-Curtis dissimilarity") + 
+  xlab("Timepoint versus baseline")
+
+df_bc_quantification_Mesnage_2023 <- df_bc_quantification %>% mutate(Timepoint = case_when((Timepoint == "Before" ) ~ 0,
+                 (Timepoint == "After" ) ~ 10,
+                 (Timepoint == "FUP_1" ) ~ 30,
+                 (Timepoint == "FUP_2" ) ~ 90))
+```
+
+##Now calculate BC stability values for the different additional studies (Olsson, Poyet, Roager, Maifeld and Palleja)
+```{r}
+columns <- c("Run", "BC_diss", "Individual", "Artificial_timepoint") 
+df_bc_quantification_Roager_2019_whole <- data.frame(matrix(nrow = 0, ncol = length(columns))) 
+
+individuals_whole_retain <- Roager_2019 %>% group_by(Individual) %>% filter(Grouped_substudies == "Whole") %>% summarise(n_samples = n()) %>% ungroup() %>% distinct(Individual) %>% mutate(Individual = as.character(Individual))
+
+for (patient in unique(individuals_whole_retain$Individual))
+{
+  patient_ps <- Roager_2019_tax_ps_rel_abun %>% ps_filter(Individual == patient) %>% ps_arrange(Artificial_timepoint) %>% ps_filter(Grouped_substudies == "Whole")
+  sample_metadata <- microbiome::meta(patient_ps)
+  baseline_samplename <- patient_ps %>% ps_filter(Artificial_timepoint == "1") ##To verify we are really comparing everything to baseline samples
+  baseline_samplename <- baseline_samplename@sam_data$Run
+  patient_bc <- as.matrix(phyloseq::distance(patient_ps, method="bray", type="samples"))
+  patient_bc <- as.data.frame(patient_bc) %>% select(all_of(baseline_samplename))
+  patient_bc <- patient_bc %>% rownames_to_column("Run") %>% left_join(sample_metadata %>% select(Run, Individual, Artificial_timepoint), by = "Run") %>% dplyr::rename(BC_diss = 2)
+  df_bc_quantification_Roager_2019_whole <- rbind(df_bc_quantification_Roager_2019_whole, patient_bc)
+}
+
+df_bc_quantification_Roager_2019_whole <- df_bc_quantification_Roager_2019_whole %>% mutate(Study = "Roager_2019_Whole_Grain")
+
+columns <- c("Run", "BC_diss", "Individual", "Artificial_timepoint") 
+df_bc_quantification_Roager_2019_refined <- data.frame(matrix(nrow = 0, ncol = length(columns))) 
+
+individuals_refined_retain <- Roager_2019 %>% group_by(Individual) %>% filter(Grouped_substudies == "Refined") %>% summarise(n_samples = n()) %>% ungroup() %>% distinct(Individual) %>% mutate(Individual = as.character(Individual))
+
+for (patient in unique(individuals_refined_retain$Individual))
+{
+  patient_ps <- Roager_2019_tax_ps_rel_abun %>% ps_filter(Individual == patient) %>% ps_arrange(Artificial_timepoint) %>% ps_filter(Grouped_substudies == "Refined")
+  sample_metadata <- microbiome::meta(patient_ps)
+  baseline_samplename <- patient_ps %>% ps_filter(Artificial_timepoint == "1") ##To verify we are really comparing everything to baseline samples
+  baseline_samplename <- baseline_samplename@sam_data$Run
+  patient_bc <- as.matrix(phyloseq::distance(patient_ps, method="bray", type="samples"))
+  patient_bc <- as.data.frame(patient_bc) %>% select(all_of(baseline_samplename))
+  patient_bc <- patient_bc %>% rownames_to_column("Run") %>% left_join(sample_metadata %>% select(Run, Individual, Artificial_timepoint), by = "Run") %>% dplyr::rename(BC_diss = 2)
+  df_bc_quantification_Roager_2019_refined <- rbind(df_bc_quantification_Roager_2019_refined, patient_bc)
+}
+
+df_bc_quantification_Roager_2019_refined <- df_bc_quantification_Roager_2019_refined %>% mutate(Study = "Roager_2019_Refined_Grain")
+
+df_bc_quantification_Roager_2019 <- rbind(df_bc_quantification_Roager_2019_whole, df_bc_quantification_Roager_2019_refined) %>% left_join(Roager_2019 %>% select(Run, Time_in_days), by = "Run") %>% dplyr::rename(sample.id = 1, Study_Patient = 3, Timepoint = 6) %>% select(-Artificial_timepoint)
+```
+
+## Palleja
+```{r}
+columns <- c("Sample_ID", "BC_diss", "Individual_ID", "Timepoint") 
+df_bc_quantification_Palleja_2019 <- data.frame(matrix(nrow = 0, ncol = length(columns)))
+
+for (patient in unique(meta_Palleja_2019$Individual_ID))
+{
+  patient_ps <- Palleja_2019_tax_ps_rel_abun %>% ps_filter(Individual_ID == patient) %>% ps_arrange(Timepoint)
+  sample_metadata <- microbiome::meta(patient_ps)
+  baseline_samplename <- patient_ps %>% ps_filter(Timepoint == "0") ##To verify we are really comparing everything to baseline samples
+  baseline_samplename <- baseline_samplename@sam_data$Sample_ID
+  patient_bc <- as.matrix(phyloseq::distance(patient_ps, method="bray", type="samples"))
+  patient_bc <- as.data.frame(patient_bc) %>% select(all_of(baseline_samplename))
+  patient_bc <- patient_bc %>% rownames_to_column("Sample_ID") %>% left_join(sample_metadata %>% select(Sample_ID, Individual_ID, Timepoint), by = "Sample_ID") %>% dplyr::rename(BC_diss = 2)
+  df_bc_quantification_Palleja_2019 <- rbind(df_bc_quantification_Palleja_2019, patient_bc)
+}
+
+df_bc_quantification_Palleja_2019 <- df_bc_quantification_Palleja_2019 %>% mutate(Study = "Palleja_2019") %>% dplyr::rename(sample.id = 1, Study_Patient = 3)
+```
+
+## Poyet
+```{r}
+columns <- c("Sample_ID", "BC_diss", "Individual_ID", "Timepoint") 
+df_bc_quantification_Poyet_2019 <- data.frame(matrix(nrow = 0, ncol = length(columns)))
+
+for (patient in unique(meta_Poyet_2019$Individual_ID))
+{
+  patient_ps <- Poyet_2019_tax_ps_rel_abun %>% ps_filter(Individual_ID == patient) %>% ps_arrange(Timepoint)
+  sample_metadata <- microbiome::meta(patient_ps)
+  baseline_samplename <- patient_ps %>% ps_filter(Timepoint == "0") ##To verify we are really comparing everything to baseline samples
+  baseline_samplename <- baseline_samplename@sam_data$Sample_ID
+  patient_bc <- as.matrix(phyloseq::distance(patient_ps, method="bray", type="samples"))
+  patient_bc <- as.data.frame(patient_bc) %>% select(all_of(baseline_samplename))
+  patient_bc <- patient_bc %>% rownames_to_column("Sample_ID") %>% left_join(sample_metadata %>% select(Sample_ID, Individual_ID, Timepoint), by = "Sample_ID") %>% dplyr::rename(BC_diss = 2)
+  df_bc_quantification_Poyet_2019 <- rbind(df_bc_quantification_Poyet_2019, patient_bc)
+}
+
+df_bc_quantification_Poyet_2019 <- df_bc_quantification_Poyet_2019 %>% mutate(Study = "Poyet_2019") %>% dplyr::rename(sample.id = 1, Study_Patient = 3)
+
+```
+
+## Olsson 2022
+```{r}
+columns <- c("Sample_ID", "BC_diss", "Individual_ID", "Timepoint_days") 
+df_bc_quantification_Olsson_2022 <- data.frame(matrix(nrow = 0, ncol = length(columns)))
+
+for (patient in unique(Olsson_2022$Individual_ID))
+{
+  patient_ps <- Olsson_2022_tax_ps_rel_abun %>% ps_filter(Individual_ID == patient) %>% ps_arrange(Timepoint)
+  sample_metadata <- microbiome::meta(patient_ps)
+  baseline_samplename <- patient_ps %>% ps_filter(Timepoint_days == "0") ##To verify we are really comparing everything to baseline samples
+  baseline_samplename <- baseline_samplename@sam_data$Run
+  patient_bc <- as.matrix(phyloseq::distance(patient_ps, method="bray", type="samples"))
+  patient_bc <- as.data.frame(patient_bc) %>% select(all_of(baseline_samplename))
+  patient_bc <- patient_bc %>% rownames_to_column("Run") %>% left_join(sample_metadata %>% select(Run, Individual_ID, Timepoint_days), by = "Run") %>% dplyr::rename(BC_diss = 2)
+  df_bc_quantification_Olsson_2022 <- rbind(df_bc_quantification_Olsson_2022, patient_bc)
+}
+
+df_bc_quantification_Olsson_2022 <- df_bc_quantification_Olsson_2022 %>% mutate(Study = "Olsson_2022") %>% dplyr::rename(sample.id = 1, Study_Patient = 3, Timepoint = 4)
+
+```
+
+##Maifeld 2019
+```{r}
+columns <- c("Sample_ID", "BC_diss", "host_subject_id", "Timepoint") 
+df_bc_quantification_Maifeld_2021 <- data.frame(matrix(nrow = 0, ncol = length(columns)))
+
+for (patient in unique(Maifeld_2021_SRA$host_subject_id))
+{
+  patient_ps <- Maifeld_2021_tax_ps_rel_abun %>% ps_filter(host_subject_id == patient) %>% ps_arrange(Timepoint)
+  sample_metadata <- microbiome::meta(patient_ps)
+  baseline_samplename <- patient_ps %>% ps_filter(Timepoint == "0") ##To verify we are really comparing everything to baseline samples
+  baseline_samplename <- baseline_samplename@sam_data$Run
+  patient_bc <- as.matrix(phyloseq::distance(patient_ps, method="bray", type="samples"))
+  patient_bc <- as.data.frame(patient_bc) %>% select(all_of(baseline_samplename))
+  patient_bc <- patient_bc %>% rownames_to_column("Run") %>% left_join(sample_metadata %>% select(Run, host_subject_id, Timepoint), by = "Run") %>% dplyr::rename(BC_diss = 2)
+  df_bc_quantification_Maifeld_2021 <- rbind(df_bc_quantification_Maifeld_2021, patient_bc)
+}
+
+df_bc_quantification_Maifeld_2021 <- df_bc_quantification_Maifeld_2021 %>% mutate(Study = "Maifeld_2021") %>% dplyr::rename(sample.id = 1, Study_Patient = 3, Timepoint = 4)
+```
+
+
+## Merge everything into 1 large dataframe and try to visualize
+```{r}
+bc_stability_all_studies <- rbind(df_bc_quantification_Mesnage_2023, df_bc_quantification_Roager_2019, df_bc_quantification_Palleja_2019, df_bc_quantification_Olsson_2022, df_bc_quantification_Poyet_2019, df_bc_quantification_Maifeld_2021) %>% filter(Study != "Roager_2019_Refined_Grain") %>% mutate(Study = ifelse(Study == "Maifeld_2021", "Maifeld_2021_Fasting (n=69)",
+                                   #ifelse(Study == "Mesnage_2023", "Mesnage_2023_Fasting",
+                                   ifelse(Study == "Mesnage_2023", "Current_Study (n=238)",
+                                   ifelse(Study == "Olsson_2022 (n=384)", "Olsson_2022_None (n=384)",
+                                   ifelse(Study == "Palleja_2019 (n=57)", "Palleja_2019_Antibiotics (n=57)",
+                                   ifelse(Study == "Maifeld_2021 (n=69)", "Maifeld_2021_Fasting (n=69)",
+                                   ifelse(Study == "Poyet_2019 (n=151)", "Poyet_2019_None (n=151)", Study)))))))
+barWidth <- 3
+
+all_data_stability <- bc_stability_all_studies %>%  filter(Study != 'Current_Study') %>% group_by(Timepoint, Study) %>% summarize(BC_diss_upper_q = quantile(BC_diss, 0.75), BC_diss_lower_q = quantile(BC_diss, 0.25), BC_diss_median = quantile(BC_diss, 0.5)) %>% ungroup() %>% filter(Timepoint != 0)
+
+colors_vector <- c("#E41A1C", "#984EA3", "darkgreen", "#A65628", "grey50", "lightgrey")
+
+all_data_stability$Study <- as.factor(all_data_stability$Study)
+all_data_stability$Study <- fct_relevel(all_data_stability$Study, "Current_Study (n=238)", "Maifeld_2021_Fasting (n=69)", "Palleja_2019_Antibiotics (n=57)", "Roager_2019_Whole_Grain (n=90)", "Olsson_2022_None (n=384)", "Poyet_2019_None (n=151)")
+
+Fig_2C <- ggplot() +
+    theme_publication() +
+    geom_errorbar(data = all_data_stability, aes(xmin = Timepoint - barWidth, xmax = Timepoint + barWidth, y = BC_diss_upper_q, color = Study), width = 0) +
+    geom_errorbar(data = all_data_stability, aes(xmin = Timepoint - barWidth, xmax = Timepoint + barWidth, y = BC_diss_lower_q, color = Study), width = 0) +
+    geom_line(data = all_data_stability %>%
+        select(Timepoint, Study, BC_diss_upper_q, BC_diss_median) %>%
+        pivot_longer(c(BC_diss_upper_q, BC_diss_median)) %>%
+        mutate(group = str_c(Timepoint, Study)),
+        aes(x = Timepoint, y = value, group = group, color = Study), linetype = "solid") +
+    geom_line(data = all_data_stability %>%
+        select(Timepoint, Study, BC_diss_lower_q, BC_diss_median) %>%
+        pivot_longer(c(BC_diss_lower_q, BC_diss_median)) %>%
+        mutate(group = str_c(Timepoint, Study)),
+         aes(x = Timepoint, y = value, group = group, color = Study), linetype = "solid") +
+    geom_point(data = all_data_stability, aes(x = Timepoint, y = BC_diss_median, color = Study), shape = 18, size = 1.5) +
+    geom_line(data = all_data_stability, aes(x = Timepoint, y = BC_diss_median, group = Study, color = Study)) +
+    scale_color_manual(values = colors_vector) +
+    xlim(0, 190) +
+    ylim(0, 1) +
+    xlab("Days after intervention start") +
+    ylab("Bray-Curtis dissimilarity") +
+    labs(color = "Study_Intervention") +
+    guides(color = guide_legend(ncol = 2)) +
+    theme(legend.position = c(0.73, 0.1)) + 
+    #theme_classic() +
+    NULL
+```
+
+## Figure 2E (first have to run the Figure_2D_Tree.Rmd script for this)
+```{r}
+label.Maifeld_before_after <- create.label(meta = sample_data(Maifeld_2021_tax_ps_rel_abun %>% ps_filter(Visit == "V1" | Visit == "V2")), label='Visit', case = "V2")
+siamcat_Maifeld_before_after <- siamcat(phyloseq = Maifeld_2021_tax_ps_rel_abun %>% ps_filter(Visit == "V1" | Visit == "V2"), label = label.Maifeld_before_after)
+show(siamcat_Maifeld_before_after)
+siamcat_Maifeld_before_after <- filter.features(siamcat_Maifeld_before_after, filter.method = 'prevalence',cutoff = 0.1)
+siamcat_Maifeld_before_after <- normalize.features(siamcat_Maifeld_before_after, norm.method = "log.std", norm.param = list(log.n0 = 1e-4, sd.min.q = 0.0)) 
+
+## Fit a random intercept per patient
+siamcat_Maifeld_before_after <- check.associations(siamcat_Maifeld_before_after, formula = "feat~label+(1|host_subject_id)", test = "lm", feature.type = "normalized")
+
+#association.plot(siamcat_Maifeld_before_after, sort.by = 'fc', panels = c('fc', 'prevalence', 'auroc'), plot.type = c("box"))
+
+siamcat_Maifeld_before_after_assocations <- associations(siamcat_Maifeld_before_after)
+siamcat_Maifeld_before_after_assocations$mOTU <- rownames(siamcat_Maifeld_before_after_assocations)
+siamcat_Maifeld_before_after_assocations$mOTU <- gsub(".*s__", "s__", siamcat_Maifeld_before_after_assocations$mOTU)
+siamcat_Maifeld_before_after_assocations$mOTU <- gsub("(?<!s__)\\[.*?\\]", "", siamcat_Maifeld_before_after_assocations$mOTU, perl = TRUE)
+siamcat_Maifeld_before_after_assocations$mOTU <- gsub("\\/.*\\|", "|", siamcat_Maifeld_before_after_assocations$mOTU, perl = TRUE)
+siamcat_Maifeld_before_after_assocations$mOTU <- gsub("s__", "", siamcat_Maifeld_before_after_assocations$mOTU)
+siamcat_Maifeld_before_after_assocations$mOTU <- gsub("\\|ext_mOTU_v31_", "_e", siamcat_Maifeld_before_after_assocations$mOTU)
+siamcat_Maifeld_before_after_assocations$mOTU <- gsub("\\|ref_mOTU_v31_", "_r", siamcat_Maifeld_before_after_assocations$mOTU)
+siamcat_Maifeld_before_after_assocations$mOTU <- gsub("\\|meta_mOTU_v31_", "_m", siamcat_Maifeld_before_after_assocations$mOTU)
+siamcat_Maifeld_before_after_assocations$mOTU <- gsub("species incertae sedis", "sp.", siamcat_Maifeld_before_after_assocations$mOTU)
+siamcat_Maifeld_before_after_assocations$mOTU <- gsub("\\b(\\w+)\\s+\\1\\b", "\\1", siamcat_Maifeld_before_after_assocations$mOTU, perl = TRUE) 
+## The last regex was written by chatgpt, see this explanation as it's very advanced regex In this code, the regular expression \\b(\\w+)\\s+\\1\\b captures a word (using \\w+) and checks if it is followed by one or more whitespace characters (\\s+) and then the exact same word again (\\1) at a word boundary (\\b). The captured word is then replaced with just the captured word (\\1). This will remove any word that's repeated twice consecutively along with the spaces in between. Make sure to use the perl = TRUE argument in gsub to enable advanced regular expression features.
+
+overlapping_mOTUs <- siamcat_Maifeld_before_after_assocations %>% mutate(Study =  "Maifeld_2021") %>% rbind(siamcat_Mesnage_2023_before_after_assocations %>% mutate(Study = "Mesnage_2023")) %>% group_by(mOTU) %>% filter(n() >= 2) %>% ungroup() %>% select(fc, mOTU, Study) %>% pivot_wider(names_from = Study, values_from = fc)
+
+## Add in color code based on phylum
+species_phylum <- associations(siamcat_Maifeld_before_after) %>% as.data.frame() %>% rownames_to_column("mOTU") %>% mutate(phylum = mOTU)
+species_phylum$mOTU <- gsub(".*s__", "s__", species_phylum$mOTU)
+species_phylum$mOTU <- gsub("(?<!s__)\\[.*?\\]", "", species_phylum$mOTU, perl = TRUE)
+species_phylum$mOTU <- gsub("\\/.*\\|", "|", species_phylum$mOTU, perl = TRUE)
+species_phylum$mOTU <- gsub("s__", "", species_phylum$mOTU)
+species_phylum$mOTU <- gsub("\\|ext_mOTU_v31_", "_e", species_phylum$mOTU)
+species_phylum$mOTU <- gsub("\\|ref_mOTU_v31_", "_r", species_phylum$mOTU)
+species_phylum$mOTU <- gsub("\\|meta_mOTU_v31_", "_m", species_phylum$mOTU)
+species_phylum$mOTU <- gsub("species incertae sedis", "sp.", species_phylum$mOTU)
+species_phylum$mOTU <- gsub("\\b(\\w+)\\s+\\1\\b", "\\1", species_phylum$mOTU, perl = TRUE) 
+
+species_phylum$phylum <- gsub(".*\\|p__([^|]+)\\|.*", "\\1", species_phylum$phylum)
+species_phylum$phylum <- gsub(".*Bacteria.*", NA, species_phylum$phylum)
+
+Fig_2E <- ggplot(overlapping_mOTUs)+
+  aes(x = Mesnage_2023, y = Maifeld_2021)+
+  geom_point(, alpha = 0.6, size = 0.5) +
+  theme_publication() +
+  stat_cor(method = "spearman") +
+  geom_hline(yintercept = 0) +
+  geom_vline(xintercept = 0) +
+  xlim(-1.4, 1.4) +
+  ylim(-1.25, 1.25) +
+  ylab("gFC mOTU Maifeld_2021") +
+  xlab("gFC mOTU Current Study")
+```
+
+## Figure 2F
+```{r}
+label.Mesnage_Maifeld_before_after <- create.label(meta = sample_data(Mesnage_Maifeld_tax_ps_rel_abun %>% ps_filter(Timepoint == "Before" | Timepoint == "After")), label = 'Timepoint', case = "After")
+siamcat_Mesnage_Maifeld_before_after <- siamcat(phyloseq = Mesnage_Maifeld_tax_ps_rel_abun %>% ps_filter(Timepoint == "Before" | Timepoint == "After"), label = label.Mesnage_Maifeld_before_after)
+show(siamcat_Mesnage_Maifeld_before_after)
+siamcat_Mesnage_Maifeld_before_after <- filter.features(siamcat_Mesnage_Maifeld_before_after, filter.method = 'prevalence',cutoff = 0.05) ## Since for the plot we only care about gFC and not about p-values!! To avoid missing any mOTUs we are interested in due to too stringent prevalence filtering
+siamcat_Mesnage_Maifeld_before_after <- normalize.features(siamcat_Mesnage_Maifeld_before_after, norm.method = "log.std", norm.param = list(log.n0 = 1e-4, sd.min.q = 0.0)) 
+
+## Fit a random intercept per patient and per study 
+siamcat_Mesnage_Maifeld_before_after <- check.associations(siamcat_Mesnage_Maifeld_before_after, formula = "feat ~ label + (1|Study_Patient) + (1|Study)", test = "lm", feature.type = "normalized")
+
+siamcat_Mesnage_Maifeld_before_after_assocations <- associations(siamcat_Mesnage_Maifeld_before_after)
+siamcat_Mesnage_Maifeld_before_after_assocations$mOTU <- rownames(siamcat_Mesnage_Maifeld_before_after_assocations)
+siamcat_Mesnage_Maifeld_before_after_assocations$mOTU <- gsub(".*s__", "s__", siamcat_Mesnage_Maifeld_before_after_assocations$mOTU)
+siamcat_Mesnage_Maifeld_before_after_assocations$mOTU <- gsub("(?<!s__)\\[.*?\\]", "", siamcat_Mesnage_Maifeld_before_after_assocations$mOTU, perl = TRUE)
+siamcat_Mesnage_Maifeld_before_after_assocations$mOTU <- gsub("\\/.*\\|", "|", siamcat_Mesnage_Maifeld_before_after_assocations$mOTU, perl = TRUE)
+siamcat_Mesnage_Maifeld_before_after_assocations$mOTU <- gsub("s__", "", siamcat_Mesnage_Maifeld_before_after_assocations$mOTU)
+siamcat_Mesnage_Maifeld_before_after_assocations$mOTU <- gsub("\\|ext_mOTU_v31_", "_e", siamcat_Mesnage_Maifeld_before_after_assocations$mOTU)
+siamcat_Mesnage_Maifeld_before_after_assocations$mOTU <- gsub("\\|ref_mOTU_v31_", "_r", siamcat_Mesnage_Maifeld_before_after_assocations$mOTU)
+siamcat_Mesnage_Maifeld_before_after_assocations$mOTU <- gsub("\\|meta_mOTU_v31_", "_m", siamcat_Mesnage_Maifeld_before_after_assocations$mOTU)
+siamcat_Mesnage_Maifeld_before_after_assocations$mOTU <- gsub("species incertae sedis", "sp.", siamcat_Mesnage_Maifeld_before_after_assocations$mOTU)
+siamcat_Mesnage_Maifeld_before_after_assocations$mOTU <- gsub("\\b(\\w+)\\s+\\1\\b", "\\1", siamcat_Mesnage_Maifeld_before_after_assocations$mOTU, perl = TRUE) 
+
+## Now filter out only the overlapping mOTUs for our figure
+siamcat_Mesnage_Maifeld_before_after_assocations <- siamcat_Mesnage_Maifeld_before_after_assocations %>% filter(mOTU %in% overlapping_mOTUs$mOTU)
+
+complete_df_mirorred_volcano_plot <- overlapping_mOTUs %>% left_join(siamcat_Mesnage_Maifeld_before_after_assocations %>% select(fc, mOTU), by = "mOTU")
+
+## Transform the p-values
+complete_df_mirorred_volcano_plot <- complete_df_mirorred_volcano_plot %>% mutate(minus_log10_p_value_adj_Maifeld = -log10(p.adj_Maifeld)) %>% mutate(minus_log10_p_value_adj_Mesnage = -log10(p.adj_Mesnage)) %>% mutate(minus_log10_p_value_adj_Maifeld = minus_log10_p_value_adj_Maifeld*-1) ## To convert all p-values into negative values so that we can build a mirrored volcano plot
+
+complete_df_mirorred_volcano_plot_long <- complete_df_mirorred_volcano_plot %>% select(mOTU,minus_log10_p_value_adj_Maifeld, minus_log10_p_value_adj_Mesnage) %>% pivot_longer(!mOTU, names_to = "Study", values_to = "adj_pvalue")
+
+## Add the gFC
+complete_df_mirorred_volcano_plot_long <- complete_df_mirorred_volcano_plot_long %>% left_join(complete_df_mirorred_volcano_plot %>% select(mOTU, fc), by= "mOTU")
+
+mirrored_volcano_plot <- ggplot(complete_df_mirorred_volcano_plot_long) +
+  theme_publication() +
+  aes(x = fc, y = adj_pvalue) +
+  geom_point(aes(color = Study), size = 0.01, alpha = 1) +
+  scale_color_manual(values = c("grey", "black")) +
+  geom_line(aes(group = mOTU), linetype = "11", linewidth = 0.15, alpha = 0.4, color = "black") +
+  geom_hline(yintercept = 1.3, size = 0.15) +
+  geom_hline(yintercept = -1.3, size = 0.15) +
+  geom_hline(yintercept = 0, size = 0.15, linetype = "11") +
+  theme(legend.position = "none") +
+  ylab("-log10 p-value") +
+  xlab("Joint effect size") +
+  ylim(-10, 22)
+```
+

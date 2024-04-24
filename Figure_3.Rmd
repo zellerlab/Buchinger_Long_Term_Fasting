@@ -1,0 +1,355 @@
+---
+title: "Figure_3"
+author: "QD"
+date: "2024-04-22"
+output: html_document
+---
+## This block contains all subpanels for Figure 3A
+```{r}
+threshold <- 0.001 ## Only get scientific notation if p-value is lower than this threshold.
+
+HL1_p_values <- data.frame(group2 = character(), p_value = numeric(), group1 = character(), HL1 = character())
+ ## Calculate p-values for all of the comparisons using LMMs
+
+for (HL1_group in unique(HL1_sums_scaled$HL1)){
+  tmp_df <- HL1_sums_scaled %>% filter(HL1 == HL1_group)
+  tmp_df_lmer <- lmer(HL1_sums ~ Timepoint + (1|Study_Patient), data = tmp_df)
+  tmp_df_result <- data.frame(summary(tmp_df_lmer)$coefficients) %>% rownames_to_column("group2") %>% filter(group2 != "(Intercept)") %>% mutate(group2 = gsub("Timepoint", "", group2)) %>% mutate(group1 = "Before") %>% rename("p_value" = 6) %>% select(group2, p_value, group1) %>% mutate(p_value = ifelse(p_value < threshold, format(p_value, scientific = TRUE, digits = 2), sprintf("%.3f", p_value))) %>% mutate(HL1 = HL1_group)
+  tmp_df_result$y.position <- 0.75 * max(tmp_df$HL1_sums)
+  tmp_df_result$y.position[2] <- 0.85 * max(tmp_df$HL1_sums) 
+  tmp_df_result$y.position[3] <- 0.95 * max(tmp_df$HL1_sums)
+  
+  HL1_p_values <- rbind(HL1_p_values, tmp_df_result)
+}
+
+## Reassign some of the y-axis labels
+HL1_p_values <- HL1_p_values %>% mutate(y.position = ifelse(HL1 == "amino acid degradation" & group2 == "After", 0.32, y.position), y.position = ifelse(HL1 == "amino acid degradation" & group2 == "FUP_1", 0.328, y.position), y.position = ifelse(HL1 == "amino acid degradation" & group2 == "FUP_2", 0.336, y.position), y.position = ifelse(HL1 == "carbohydrate degradation" & group2 == "After", 0.4, y.position), y.position = ifelse(HL1 == "carbohydrate degradation" & group2 == "FUP_1", 0.41, y.position), y.position = ifelse(HL1 == "carbohydrate degradation" & group2 == "FUP_2", 0.42, y.position), y.position = ifelse(HL1 == "lipid degradation" & group2 == "After", 0.044, y.position), y.position = ifelse(HL1 == "lipid degradation" & group2 == "FUP_1", 0.047, y.position), y.position = ifelse(HL1 == "lipid degradation" & group2 == "FUP_2", 0.05, y.position))
+
+write_xlsx(HL1_p_values %>% select(HL1, group2, p_value) %>% rename("HL1_GMMs" = HL1, "Timepoint_compared_to_baseline" = group2, "p.val" = p_value), here("Supplementary_Tables","TableS5.xlsx"))
+
+## For a paper figure, use AA degradation, carbohydrate, gas metabolism, amines and polyamines degradation, glycoprotin degradation & lipid degradation. Make those figures here
+
+amines_polyamines <- ggplot(HL1_sums_scaled %>% filter(HL1 == "amines and polyamines degradation")) +
+  theme_publication() +
+  aes(x = Timepoint, y = HL1_sums) +
+  geom_boxplot(aes(fill = Timepoint), outlier.alpha = 0.2) +
+  stat_pvalue_manual(HL1_p_values %>% filter(HL1 == "amines and polyamines degradation"), x = "group2", y.position = 0.007, label = "p_value", tip.length = 0, size = 1.7, bracket.shorten = 0.2) +
+  scale_fill_manual(values=c('#366eb2','#bc3f60','#b25336','#ffb452')) +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  xlab("") +
+  ylab("Pathway abundance") +
+  labs(title = "Amines and polyamines degradation") 
+  
+carbohydrates <- ggplot(HL1_sums_scaled %>% filter(HL1 == "carbohydrate degradation")) +
+  theme_publication() +
+  aes(x = Timepoint, y = HL1_sums) +
+  geom_boxplot(aes(fill = Timepoint), outlier.alpha = 0.2) +
+  stat_pvalue_manual(HL1_p_values %>% filter(HL1 == "carbohydrate degradation"), x = "group2", y.position = 0.45, label = "p_value", tip.length = 0, size = 1.7, bracket.shorten = 0.2) +
+  scale_fill_manual(values=c('#366eb2','#bc3f60','#b25336','#ffb452')) +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  xlab("") +
+  labs(title = "Carbohydrate degradation") +
+  ylab("")
+  
+glycoprotein <- ggplot(HL1_sums_scaled %>% filter(HL1 == "glycoprotein degradation")) +
+  theme_publication() +
+  aes(x = Timepoint, y = HL1_sums) +
+  geom_boxplot(aes(fill = Timepoint), outlier.alpha = 0.2) +
+  stat_pvalue_manual(HL1_p_values %>% filter(HL1 == "glycoprotein degradation"), x = "group2", y.position = 0.06, label = "p_value", tip.length = 0, size = 1.7, bracket.shorten = 0.2) +
+  scale_fill_manual(values=c('#366eb2','#bc3f60','#b25336','#ffb452')) +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  xlab("") +
+  labs(title = "Glycoprotein degradation") +
+  ylab("")
+```
+
+## Figure 3B
+```{r}
+Mesnage_2023_CAZy_long <- psmelt(CAZy_Mesnage_2023_ps)
+
+## First have to run part in the CAZy_GSEA.Rmd script
+
+pathways_FAD_1 <- list()
+
+for (group in levels(test$FUNCTION_AT_DESTINATION_1)){
+  print(group)
+  tmp_df <- test %>% dplyr::filter(FUNCTION_AT_DESTINATION_1==group)
+  cazymes <- tmp_df %>% select(Subfamily) %>% pull()
+  pathways_FAD_1[group] <- group
+  pathways_FAD_1[[length(pathways_FAD_1)]] <- cazymes
+}
+
+substrate_annotation_cazymes <- as.data.frame(do.call(cbind, pathways_FAD_1)) ## Note that this automatically fills missing values with duplicates, so just have to filter out the duplicates and all should be good
+substrate_annotation_cazymes_long <- substrate_annotation_cazymes %>% pivot_longer(cols = everything(), names_to = "Substrate", values_to = "CAZyme") %>% distinct() 
+substrate_annotation_cazymes_long$Substrate <- as.factor(substrate_annotation_cazymes_long$Substrate)
+
+RPKM_per_substrate <- as.data.frame(matrix(ncol = 3, nrow = 0), c("Sample", "RPKM_sum", "Substrate"))
+
+for (group in levels(substrate_annotation_cazymes_long$Substrate)){
+  print(group)
+  substrate_annotation_tmp <- substrate_annotation_cazymes_long %>% filter(Substrate == group)
+  tmp_df <- Mesnage_2023_CAZy_long %>% dplyr::filter(OTU %in% substrate_annotation_tmp$CAZyme)
+  tmp_df <- tmp_df %>% group_by(Sample) %>% summarise(RPKM_sum = sum(Abundance)) %>% ungroup() %>% add_column(Substrate = group)
+  RPKM_per_substrate <- RPKM_per_substrate %>% rbind(tmp_df)
+}
+
+RPKM_per_substrate <- left_join(RPKM_per_substrate, data.frame(metadata_full_taxonomy_Mesnage_2023_ps) %>% select(sample.id, Timepoint, Study_Patient), by = c("Sample" = "sample.id"))
+
+RPKM_per_substrate_ratios <- RPKM_per_substrate %>% pivot_wider(names_from = Substrate, values_from = RPKM_sum) %>% mutate(Mucin_to_DF = Mucin / DF) %>% mutate(GAG_to_DF = GAG / DF)
+
+mucin_df_lmer <- lmer(Mucin_to_DF ~ Timepoint + (1|Study_Patient), data = RPKM_per_substrate_ratios)
+summary(mucin_df_lmer)
+
+threshold <- 0.001
+#mucin_df_significance <- data.frame(group1 = rep("Before", 3), group2 = c("After", "FUP_1", "FUP_2"), p_value = c(2e-16, 0.720, 0.324))
+mucin_df_significance <- data.frame(summary(mucin_df_lmer)$coefficients) %>% rownames_to_column("group2") %>% filter(group2 != "(Intercept)") %>% mutate(group2 = gsub("Timepoint", "", group2)) %>% mutate(group1 = "Before") %>% rename("p_value" = 6) %>% select(group2, p_value, group1) %>% mutate(p_value = ifelse(p_value < threshold, format(p_value, scientific = TRUE, digits = 2), sprintf("%.3f", p_value))) #%>% mutate(p_value = format(p_value, scientific = TRUE, digits = 2))
+
+Mucin_to_DF <- ggplot(RPKM_per_substrate_ratios) +
+  theme_publication() +
+  aes(x = Timepoint, y = Mucin_to_DF) +
+  geom_boxplot(aes(fill = Timepoint), outlier.alpha = 0.2) +
+  stat_pvalue_manual(mucin_df_significance, x = "group2", y.position = 0.36, label = "p_value", tip.length = 0, size = 1.7, bracket.shorten = 0.2) +
+  scale_fill_manual(values=c('#366eb2','#bc3f60','#b25336','#ffb452')) +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  xlab("") +
+  ylab("Abundance ratio") +
+  labs(title = "Mucin to DF")
+
+threshold <- 0.001
+
+gag_df_lmer <- lmer(GAG_to_DF ~ Timepoint + (1|Study_Patient), data = RPKM_per_substrate_ratios)
+summary(gag_df_lmer)
+#gag_df_significance <- data.frame(group1 = rep("Before", 3), group2 = c("After", "FUP_1", "FUP_2"), p_value = c(2e-16, 0.636, 0.780))
+
+gag_df_significance <- data.frame(summary(gag_df_lmer)$coefficients) %>% rownames_to_column("group2") %>% filter(group2 != "(Intercept)") %>% mutate(group2 = gsub("Timepoint", "", group2)) %>% mutate(group1 = "Before") %>% rename("p_value" = 6) %>% select(group2, p_value, group1) %>% mutate(p_value = ifelse(p_value < threshold, format(p_value, scientific = TRUE, digits = 2), sprintf("%.3f", p_value))) 
+
+GAG_to_DF <- ggplot(RPKM_per_substrate_ratios) +
+  theme_publication() +
+  aes(x = Timepoint, y = GAG_to_DF) +
+  geom_boxplot(aes(fill = Timepoint),outlier.alpha = 0.2) +
+  scale_fill_manual(values=c('#366eb2','#bc3f60','#b25336','#ffb452')) +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  stat_pvalue_manual(gag_df_significance, x = "group2", y.position = 0.09, label = "p_value", tip.length = 0, size = 1.7, bracket.shorten = 0.2) +
+  xlab("") +
+  ylab("") +
+  labs(title = "GAG to DF") 
+```
+
+## Figure 3C
+```{r}
+label.Mesnage_2023_before_after_cazy <- create.label(meta = sample_data(CAZy_Mesnage_2023_ps_before_after), label='Timepoint', case = "After")
+siamcat_Mesnage_2023_before_after_cazy <- siamcat(phyloseq = CAZy_Mesnage_2023_ps_before_after, label = label.Mesnage_2023_before_after_cazy)
+show(siamcat_Mesnage_2023_before_after_cazy)
+siamcat_Mesnage_2023_before_after_cazy <- filter.features(siamcat_Mesnage_2023_before_after_cazy, filter.method = 'prevalence',cutoff = 0.1)
+siamcat_Mesnage_2023_before_after_cazy <- normalize.features(siamcat_Mesnage_2023_before_after_cazy, norm.method = "log.std", norm.param = list(log.n0 = 0.01, sd.min.q = 0.0)) 
+
+## Fit a random intercept per patient
+siamcat_Mesnage_2023_before_after_cazy <- check.associations(siamcat_Mesnage_2023_before_after_cazy, formula = "feat ~ label + (1|Study_Patient)", test = "lm", feature.type = "normalized")
+
+siamcat_Mesnage_2023_before_after_cazy_assocations <- associations(siamcat_Mesnage_2023_before_after_cazy)
+siamcat_Mesnage_2023_before_after_cazy_assocations$cazyme_fam <- rownames(siamcat_Mesnage_2023_before_after_cazy_assocations)
+siamcat_Mesnage_2023_before_after_cazy_assocations$cazyme_fam <- gsub(".*s__", "s__", siamcat_Mesnage_2023_before_after_cazy_assocations$cazyme_fam)
+siamcat_Mesnage_2023_before_after_cazy_assocations$cazyme_fam <- gsub("\\[.*?\\]", "", siamcat_Mesnage_2023_before_after_cazy_assocations$cazyme_fam)
+
+write_xlsx(siamcat_Mesnage_2023_before_after_cazy_assocations %>% select(cazyme_fam, fc, p.val, p.adj) %>% arrange(desc(fc)) %>% rename("gfc" = fc, "CAZyme" = cazyme_fam), here("Supplementary_Tables","TableS6.xlsx"))
+
+bar_plots_Mesnage_2023_cazy <- siamcat_Mesnage_2023_before_after_cazy_assocations %>% mutate(l=case_when(p.adj < 0.05~'*', TRUE~'')) %>% filter(p.adj < 0.05) %>% mutate(cazyme_fam = fct_reorder(cazyme_fam, fc, .desc = TRUE)) %>% mutate(Category=case_when(fc > 0 ~ "After", fc < 0 ~ "Before")) %>% filter(fc < -0.7 | fc > 0.7)
+
+bar_plots_Mesnage_2023_cazy <- siamcat_Mesnage_2023_before_after_cazy_assocations %>% mutate(l=case_when(p.adj < 0.05~'*', TRUE~'')) %>% mutate(cazyme_fam = fct_reorder(cazyme_fam, fc, .desc = TRUE)) %>% mutate(Category=case_when(fc > 0 ~ "After", fc < 0 ~ "Before")) %>% group_by(Category) %>% arrange(Category, desc(abs(fc))) %>% slice_head(n = 20) %>% ungroup()
+
+horiz_bar_plots_cazy <- ggplot(bar_plots_Mesnage_2023_cazy)+
+  aes(x = fc, y = cazyme_fam, fill = Category)+
+  geom_bar(stat="identity")+
+  theme_classic()+
+  scale_fill_manual(values=c('#bc3f60', '#366eb2'))+
+  xlab("Generalized fold change")+
+  theme(axis.title.x = element_text(size = 14)) + 
+  theme(axis.text.x = element_text(size=11))+
+  theme(axis.text.y = element_text(size=7.5))+
+  theme(legend.title=element_text(size=16))+
+  theme(legend.text=element_text(size=14))+
+  ylab("")
+
+## Now add in the small heatmaps with substrate designations and perform the GSEA analyses
+library(fgsea)
+results_associations_FAD_1 <- siamcat_Mesnage_2023_before_after_cazy_assocations %>% filter(cazyme_fam %in% test$Subfamily)
+ranks <- results_associations_FAD_1$fc
+names(ranks) <- results_associations_FAD_1$cazyme_fam
+head(ranks)
+barplot(sort(ranks, decreasing = T))
+
+## Perform the actual testing
+
+set.seed(1000)
+fgseaRes <- fgseaMultilevel(pathways_FAD_1, ranks, minSize=1, maxSize = 500, nproc = 1) ## For some reason the nproc = 1 is necessary for the results to be fully reproducible
+head(fgseaRes[order(padj, -abs(NES)), ], n=10)
+plotEnrichment(pathways_FAD_1[["GAG"]], ranks)
+plotEnrichment(pathways_FAD_1[["DF"]], ranks)
+plotEnrichment(pathways_FAD_1[["Mucin"]], ranks)
+
+## Make the plots
+cazymes_to_display <- siamcat_Mesnage_2023_before_after_cazy_assocations %>% dplyr::mutate(l=case_when(p.adj < 0.05~'*', TRUE~'')) %>% filter(cazyme_fam %in% bar_plots_Mesnage_2023_cazy$cazyme_fam) %>% dplyr::mutate(cazyme_fam = fct_reorder(cazyme_fam,fc, .desc = TRUE))
+
+cazymes_order <- bar_plots_Mesnage_2023_cazy %>% arrange(fc)
+glycan_annotations_final_cleaned_long$Subfamily <- gsub("([A-Z])_","\\1",glycan_annotations_final_cleaned_long$Subfamily)
+
+cazymes_to_display_substrate_annotations <- glycan_annotations_final_cleaned_long %>% filter(Subfamily %in% cazymes_to_display$cazyme_fam)
+unique(cazymes_to_display_substrate_annotations$FUNCTION_AT_DESTINATION_1) ## There is no unknown category, so this will not give any issues converting NA into Unknown
+cazymes_to_display_substrate_annotations$FUNCTION_AT_DESTINATION_1 <- cazymes_to_display_substrate_annotations$FUNCTION_AT_DESTINATION_1 %>% replace_na("Unknown")
+
+## For dietary fiber
+
+DF_annotations <- cazymes_to_display_substrate_annotations %>% group_by(Subfamily) %>% distinct(FUNCTION_AT_DESTINATION_1) %>% dplyr::mutate(DF = case_when(FUNCTION_AT_DESTINATION_1 == "DF" ~ "Yes",TRUE ~ "No"))
+
+DF_annotations_final <- DF_annotations %>% group_by(Subfamily) %>% dplyr::mutate(DF_Final = ifelse(any(DF == "Yes"),TRUE,FALSE)) %>% ungroup() %>% filter(!(DF_Final & DF =="No")) %>% dplyr::mutate(DF_Final = as.factor(as.character(DF_Final))) %>% dplyr::mutate(DF_Final = recode(DF_Final,"TRUE"="Yes","FALSE"="No")) %>% dplyr::mutate(DF_Final = case_when(FUNCTION_AT_DESTINATION_1=="Unknown" ~ "Unknown",TRUE ~ as.character(DF_Final))) %>% dplyr::mutate(substrate = "DF") %>% dplyr::mutate_at(vars(Subfamily), factor) ## Filter so that if a CAZyme has both annotations with yes and no, that only the yes is kept and to no is filtered out. Also need to have something to put on the x-axis for the plotting (the substrate column). Lastly, also need to make sure that there is a distinction between No and Unknown
+
+## Have to reorder, the code below induces an NA on the top of the plot which is wrong!! Otherwise it seems to work reasonably well, even if the order is wrong because of the min / max values.
+row_annotations_DF <- ggplot(DF_annotations_final %>% filter(Subfamily %in% cazymes_to_display$cazyme_fam) %>% droplevels() %>% dplyr::mutate(Subfamily = factor(Subfamily, levels = cazymes_to_display$cazyme_fam)) %>% mutate(Subfamily = factor(Subfamily, levels = cazymes_order$cazyme_fam)) %>% drop_na(Subfamily)) +
+  theme_publication() +
+  geom_tile()+
+  aes(x=substrate,y=fct_rev(Subfamily),fill=DF_Final)+
+  scale_fill_manual(values = c("gray94","white", "black"),name="Presence") +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
+  theme(legend.position = "none") +
+  xlab("p-value\n 2.0e-03") + 
+  ylab("")
+
+## For GAGs
+
+GAG_annotations <- cazymes_to_display_substrate_annotations %>% group_by(Subfamily) %>% distinct(FUNCTION_AT_DESTINATION_1) %>% dplyr::mutate(GAG = case_when(FUNCTION_AT_DESTINATION_1 == "GAG" ~ "Yes",TRUE ~ "No"))
+
+GAG_annotations_final <- GAG_annotations %>% group_by(Subfamily) %>% dplyr::mutate(GAG_Final = ifelse(any(GAG == "Yes"),TRUE,FALSE)) %>% ungroup() %>% filter(!(GAG_Final & GAG =="No")) %>% dplyr::mutate(GAG_Final = as.factor(as.character(GAG_Final))) %>% dplyr::mutate(GAG_Final = recode(GAG_Final,"TRUE"="Yes","FALSE"="No")) %>% dplyr::mutate(GAG_Final = case_when(FUNCTION_AT_DESTINATION_1=="Unknown" ~ "Unknown",TRUE ~ as.character(GAG_Final))) %>% dplyr::mutate(substrate = "GAG") %>% dplyr::mutate_at(vars(Subfamily), factor) ## Filter so that if a CAZyme has both annotations with yes and no, that only the yes is kept and to no is filtered out. Also need to have something to put on the x-axis for the plotting (the substrate column)
+
+row_annotations_GAG <- ggplot(GAG_annotations_final %>% filter(Subfamily %in% cazymes_to_display$cazyme_fam) %>% droplevels() %>% dplyr::mutate(Subfamily = factor(Subfamily, levels = cazymes_to_display$cazyme_fam)) %>% mutate(Subfamily = factor(Subfamily, levels = cazymes_order$cazyme_fam)) %>% drop_na(Subfamily)) +
+  geom_tile()+
+  aes(x=substrate,y=fct_rev(Subfamily),fill=GAG_Final)+
+  scale_fill_manual(values = c("gray94","white", "black"),name="Presence") +
+  theme_publication() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
+  theme(legend.position = "none") +
+  xlab("p-value\n 9.6e-04") + 
+  ylab("")
+
+## For mucin
+
+Mucin_annotations <- cazymes_to_display_substrate_annotations %>% group_by(Subfamily) %>% distinct(FUNCTION_AT_DESTINATION_1) %>% dplyr::mutate(Mucin = dplyr::case_when(FUNCTION_AT_DESTINATION_1 == "Mucin" ~ "Yes",TRUE ~ "No"))
+
+Mucin_annotations_final <- Mucin_annotations %>% group_by(Subfamily) %>% dplyr::mutate(Mucin_Final = ifelse(any(Mucin == "Yes"),TRUE,FALSE)) %>% ungroup() %>% filter(!(Mucin_Final & Mucin =="No")) %>% dplyr::mutate(Mucin_Final = as.factor(as.character(Mucin_Final))) %>% dplyr::mutate(Mucin_Final = recode(Mucin_Final,"TRUE"="Yes","FALSE"="No")) %>% dplyr::mutate(Mucin_Final = case_when(FUNCTION_AT_DESTINATION_1=="Unknown" ~ "Unknown",TRUE ~ as.character(Mucin_Final))) %>% dplyr::mutate(substrate = "Mucin") %>% dplyr::mutate_at(vars(Subfamily), factor)## Filter so that if a CAZyme has both annotations with yes and no, that only the yes is kept and to no is filtered out. Also need to have something to put on the x-axis for the plotting (the substrate column)
+
+row_annotations_Mucin <- ggplot(Mucin_annotations_final %>% filter(Subfamily %in% cazymes_to_display$cazyme_fam) %>% droplevels() %>% dplyr::mutate(Subfamily = factor(Subfamily, levels = cazymes_to_display$cazyme_fam)) %>% mutate(Subfamily = factor(Subfamily, levels = cazymes_order$cazyme_fam)) %>% drop_na(Subfamily)) +
+  geom_tile()+
+  aes(x=substrate,y=fct_rev(Subfamily),fill=Mucin_Final)+
+  scale_fill_manual(values = c("gray94","white", "black"),name="Presence") +
+  theme_publication() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
+  theme(legend.position = "none") +
+  xlab("p-value\n 2.4e-04") + 
+  ylab("")
+
+library(aplot)
+
+Fig_3C <- horiz_bar_plots_cazy %>% insert_right(row_annotations_DF,width=0.08) %>% insert_right(row_annotations_GAG,width=0.08) %>%  insert_right(row_annotations_Mucin,width=0.08)
+
+
+```
+
+## Figure 3D. Part of these objects are generated in the Figure_2D_Tree.Rmd script file
+```{r}
+## Compute the meangenomic copy nr as well, prevalence is already computed
+cazy_genus_heatmap <- motus_cazy_genus %>% group_by(cazy_family, Genus) %>% mutate(meanCopyNumber_genus = mean(meanCopyNumber)) %>% ungroup()
+
+genus_cazy_filtered <- cazy_genus_heatmap
+genus_cazy_filtered$Genus <- gsub(".*g__", "g__", genus_cazy_filtered$Genus)
+genus_cazy_filtered$Genus <- gsub("(?<!g__)\\[.*?\\]", "", genus_cazy_filtered$Genus, perl = TRUE)
+genus_cazy_filtered$Genus <- gsub("\\/.*\\|", "|", genus_cazy_filtered$Genus, perl = TRUE)
+genus_cazy_filtered$Genus <- gsub("g__", "", genus_cazy_filtered$Genus)
+## There seems to be 1 Genus missing unfortunately, "Clostridiales sp._e16450"
+
+genus_cazy_filtered <- genus_cazy_filtered %>% filter(Genus %in% number_species_changed_genus$Genus_only) %>% filter(!str_detect(Genus, "annotated")) %>% filter(!str_detect(Genus, "sedis")) %>% filter(Genus != '') %>% filter(cazy_family %in% bar_plots_Mesnage_2023_cazy$cazyme_fam)
+
+cazy_plot_order <- bar_plots_Mesnage_2023_cazy %>% arrange(fc) 
+cazy_plot_order <- fct_drop(cazy_plot_order$cazyme_fam)
+
+tax_plot_order_intermediate <- siamcat_Mesnage_2023_before_after_genus_assocations %>% filter(Genus %in% genus_cazy_filtered$Genus) %>% arrange(fc) %>% mutate(Genus = as.factor(Genus))
+tax_plot_order <- fct_drop(tax_plot_order_intermediate$Genus)
+
+## Have to see where the cut is for enrichment at taxonomic level for the vertical line. Seems between Bittarella and Anaerostipes
+
+prevalence_heatmap_genus <- ggplot(genus_cazy_filtered %>% mutate(cazy_family=factor(cazy_family, levels = rev(cazy_plot_order))) %>% mutate(Genus=factor(Genus, levels = rev(tax_plot_order)))) +
+  aes(x = Genus, y = cazy_family, fill = prevalence) +
+  theme_publication() +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "black") +
+  xlab("") +
+  ylab("") +
+  geom_hline(yintercept = 0.5 + 0:40, linewidth = 0.001, color = "gray65") +
+  geom_hline(yintercept = 20.5, color = "black") +
+  geom_vline(xintercept = 32.5) +
+  theme(axis.text.y = element_blank()) +
+  theme(axis.ticks = element_blank()) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  theme(legend.position = "none") +
+  theme(panel.grid.minor.y = element_line(colour = "black"))
+  
+## Now overplot on the genera the genus gFCs
+overplot_genus_gfc <- ggplot(siamcat_Mesnage_2023_before_after_genus_assocations %>% filter(Genus %in% genus_cazy_filtered$Genus) %>% mutate(Genus=factor(Genus, levels = rev(tax_plot_order))) %>% mutate(directionality_change = case_when(fc < 0 ~ "Depleted_After", fc >  0 ~ "Enriched_After")) %>% mutate(fc = abs(fc) *-1)) +
+  aes(x = Genus, y = fc, fill = directionality_change) +
+  theme_publication() +
+  geom_bar(stat = "identity", alpha = 0.5) +
+  scale_fill_manual(values=c('#366eb2','#bc3f60')) +
+  theme(axis.ticks.x = element_blank()) +
+  theme(axis.text.x = element_blank()) +
+  theme(legend.position = "none") +
+  ylab("") +
+  xlab("")
+```
+
+
+## Figure 3E
+```{r}
+motus_convert_full_names_cleaned <- associations(siamcat_Mesnage_2023_before_after)
+motus_convert_full_names_cleaned$mOTU <- rownames(motus_convert_full_names_cleaned)
+motus_convert_full_names_cleaned$mOTU <- gsub(".*s__", "s__", motus_convert_full_names_cleaned$mOTU)
+motus_convert_full_names_cleaned$mOTU <- gsub("(?<!s__)\\[.*?\\]", "", motus_convert_full_names_cleaned$mOTU, perl = TRUE)
+motus_convert_full_names_cleaned$mOTU <- gsub("\\/.*\\|", "|", motus_convert_full_names_cleaned$mOTU, perl = TRUE)
+motus_convert_full_names_cleaned$mOTU <- gsub("s__", "", motus_convert_full_names_cleaned$mOTU)
+motus_convert_full_names_cleaned$mOTU <- gsub(".*\\|", "", motus_convert_full_names_cleaned$mOTU)
+
+## We have CAZyme data for 585 of the mOTUs (out of 772 tested)
+motus_cazy_vertical_barplots <- motus_cazy %>% filter(mOTU_ID %in% motus_convert_full_names_cleaned$mOTU)
+motus_cazy_filtered_vertical_barplots_final_df <- motus_cazy_vertical_barplots %>% group_by(cazy_family) %>% summarise(count = sum(prevalence > 0)) %>% filter(cazy_family %in% bar_plots_Mesnage_2023_cazy$cazyme_fam) %>% drop_na(cazy_family)
+
+motus_cazy_count_vertical_barplots <- ggplot(motus_cazy_filtered_vertical_barplots_final_df %>% mutate(cazy_family=factor(cazy_family, levels = rev(cazy_plot_order)))) +
+  theme_publication() +
+  aes(x = cazy_family, y = count) +
+  geom_bar(stat = "identity") +
+  geom_vline(xintercept = 0.5 + 0:40, linewidth = 0.001, color = "gray65") +
+  coord_flip() +
+  ylab("Number of mOTUs in which a CAZyme is found") +
+  xlab("")
+```
+
+## Figure 3F
+```{r}
+cazy_taxonomy_Mesnage_2023_ps_changed <- cazy_taxonomy_Mesnage_2023_ps %>% ps_filter(direction_change != "Unchanged")
+
+set.seed(1000)
+label.direction_native_ML <- create.label(meta = sample_data(cazy_taxonomy_Mesnage_2023_ps_changed),label='direction_change', case='After fasting')
+sc.obj_native_ML_blocked_cazy <- siamcat(phyloseq = cazy_taxonomy_Mesnage_2023_ps_changed, label = label.direction_native_ML)
+sc.obj_native_ML_blocked_cazy <- filter.features(sc.obj_native_ML_blocked_cazy, filter.method = 'prevalence',cutoff = 0.00)
+# normalize features
+sc.obj_native_ML_blocked_cazy <- normalize.features(sc.obj_native_ML_blocked_cazy, norm.method = "pass")
+# Create data split and include blocking for family
+sc.obj_native_ML_blocked_cazy <- create.data.split(sc.obj_native_ML_blocked_cazy, num.folds = 10, num.resample = 10, inseparable = "Family")
+# train LASSO model
+#sc.obj_native_ML_blocked_cazy <- train.model(sc.obj_native_ML_blocked_cazy, method = "lasso")
+sc.obj_native_ML_blocked_cazy <- train.model(sc.obj_native_ML_blocked_cazy, method='randomForest', param.set = list('num.trees'= 200))
+sc.obj_native_ML_blocked_cazy <- make.predictions(sc.obj_native_ML_blocked_cazy)
+sc.obj_native_ML_blocked_cazy <- evaluate.predictions(sc.obj_native_ML_blocked_cazy) 
+ 
+model.evaluation.plot(sc.obj_native_ML_blocked_cazy, colours = c("dodgerblue"), point_coords = c(0.29, 0.57))
+```
+

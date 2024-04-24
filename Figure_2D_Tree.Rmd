@@ -1,0 +1,357 @@
+---
+title: "Figure_2D"
+author: "QD"
+date: "2024-01-04"
+output: html_document
+---
+
+## Start with differential abundance testing before-after fasting at mOTUs level
+```{r}
+label.Mesnage_2023_before_after <- create.label(meta = sample_data(Mesnage_2023_tax_ps_rel_abun_before_after), label = "Timepoint", case = "After")
+siamcat_Mesnage_2023_before_after <- siamcat(phyloseq = Mesnage_2023_tax_ps_rel_abun_before_after, label = label.Mesnage_2023_before_after)
+show(siamcat_Mesnage_2023_before_after)
+siamcat_Mesnage_2023_before_after <- filter.features(siamcat_Mesnage_2023_before_after, filter.method = 'prevalence',cutoff = 0.1)
+siamcat_Mesnage_2023_before_after <- normalize.features(siamcat_Mesnage_2023_before_after, norm.method = "log.std", norm.param = list(log.n0 = 1e-4, sd.min.q = 0.0)) 
+
+## Fit a random intercept per patient
+siamcat_Mesnage_2023_before_after <- check.associations(siamcat_Mesnage_2023_before_after, formula = "feat~label+(1|Study_Patient)", test = "lm", feature.type = "normalized")
+
+#association.plot(siamcat_Mesnage_2023_before_after, sort.by = 'fc', panels = c('fc', 'prevalence', 'auroc'), plot.type = c("box"))
+
+siamcat_Mesnage_2023_before_after_assocations <- associations(siamcat_Mesnage_2023_before_after)
+siamcat_Mesnage_2023_before_after_assocations$mOTU <- rownames(siamcat_Mesnage_2023_before_after_assocations)
+siamcat_Mesnage_2023_before_after_assocations$mOTU <- gsub(".*s__", "s__", siamcat_Mesnage_2023_before_after_assocations$mOTU)
+siamcat_Mesnage_2023_before_after_assocations$mOTU <- gsub("(?<!s__)\\[.*?\\]", "", siamcat_Mesnage_2023_before_after_assocations$mOTU, perl = TRUE)
+siamcat_Mesnage_2023_before_after_assocations$mOTU <- gsub("\\/.*\\|", "|", siamcat_Mesnage_2023_before_after_assocations$mOTU, perl = TRUE)
+siamcat_Mesnage_2023_before_after_assocations$mOTU <- gsub("s__", "", siamcat_Mesnage_2023_before_after_assocations$mOTU)
+siamcat_Mesnage_2023_before_after_assocations$mOTU <- gsub("\\|ext_mOTU_v31_", "_e", siamcat_Mesnage_2023_before_after_assocations$mOTU)
+siamcat_Mesnage_2023_before_after_assocations$mOTU <- gsub("\\|ref_mOTU_v31_", "_r", siamcat_Mesnage_2023_before_after_assocations$mOTU)
+siamcat_Mesnage_2023_before_after_assocations$mOTU <- gsub("\\|meta_mOTU_v31_", "_m", siamcat_Mesnage_2023_before_after_assocations$mOTU)
+siamcat_Mesnage_2023_before_after_assocations$mOTU <- gsub("species incertae sedis", "sp.", siamcat_Mesnage_2023_before_after_assocations$mOTU)
+siamcat_Mesnage_2023_before_after_assocations$mOTU <- gsub("\\b(\\w+)\\s+\\1\\b", "\\1", siamcat_Mesnage_2023_before_after_assocations$mOTU, perl = TRUE) 
+## The last regex was written by chatgpt, see this explanation as it's very advanced regex In this code, the regular expression \\b(\\w+)\\s+\\1\\b captures a word (using \\w+) and checks if it is followed by one or more whitespace characters (\\s+) and then the exact same word again (\\1) at a word boundary (\\b). The captured word is then replaced with just the captured word (\\1). This will remove any word that's repeated twice consecutively along with the spaces in between. Make sure to use the perl = TRUE argument in gsub to enable advanced regular expression features.
+
+## Write supplementary table
+Table_S4_data <- associations(siamcat_Mesnage_2023_before_after)
+Table_S4_data$mOTU <- rownames(Table_S4_data)
+Table_S4_data$mOTU <- gsub(".*s__", "s__", Table_S4_data$mOTU)
+Table_S4_data$mOTU <- gsub("(?<!s__)\\[.*?\\]", "", Table_S4_data$mOTU, perl = TRUE)
+Table_S4_data$mOTU <- gsub("\\/.*\\|", "|", Table_S4_data$mOTU, perl = TRUE)
+Table_S4_data$mOTU <- gsub("s__", "", Table_S4_data$mOTU)
+Table_S4_data$mOTU <- gsub("\\|ext_mOTU_v31_", " [e", Table_S4_data$mOTU)
+Table_S4_data$mOTU <- gsub("\\|ref_mOTU_v31_", " [r", Table_S4_data$mOTU)
+Table_S4_data$mOTU <- gsub("\\|meta_mOTU_v31_", " [m", Table_S4_data$mOTU)
+Table_S4_data$mOTU <- gsub("species incertae sedis", "sp.", Table_S4_data$mOTU)
+Table_S4_data$mOTU <- gsub("\\b(\\w+)\\s+\\1\\b", "\\1", Table_S4_data$mOTU, perl = TRUE) 
+Table_S4_data$mOTU <- paste(Table_S4_data$mOTU, "]", sep = "")
+
+write_xlsx(Table_S4_data %>% select(mOTU, fc, p.val, p.adj) %>% arrange(desc(fc)) %>% rename("gfc" = fc), here("Supplementary_Tables","TableS4.xlsx"))
+
+bar_plots_random_effect_study <- siamcat_Mesnage_2023_before_after_assocations %>% mutate(l=case_when(p.adj < 0.05~'*', TRUE~'')) %>% filter(fc > 0.6 | fc < -0.6) %>% filter(p.adj < 0.05) %>% mutate(mOTU = fct_reorder(mOTU, fc, .desc = TRUE)) %>% mutate(Category=case_when(fc > 0 ~ "After", fc < 0 ~ "Before"))
+
+bar_plots_random_effect_study <- siamcat_Mesnage_2023_before_after_assocations %>% mutate(l=case_when(p.adj < 0.05~'*', TRUE~'')) %>% mutate(mOTU = fct_reorder(mOTU, fc, .desc = TRUE)) %>% mutate(Category=case_when(fc > 0 ~ "After", fc < 0 ~ "Before")) %>% group_by(Category) %>% arrange(Category, desc(abs(fc))) %>% slice_head(n = 15) %>% ungroup() %>% arrange(fc)
+
+horiz_bar_plots <- ggplot(bar_plots_random_effect_study)+
+  aes(x = fc, y = mOTU, fill = Category)+
+  geom_bar(stat="identity")+
+  theme_classic()+
+  scale_fill_manual(values=c('#D41645', '#3B6FB6'))+
+  xlab("Generalized fold change")+
+  theme(axis.title.x = element_text(size = 14)) + 
+  theme(axis.text.x = element_text(size=11))+
+  theme(axis.text.y = element_text(size=7.5))+
+  theme(legend.title=element_text(size=16))+
+  theme(legend.text=element_text(size=14))+
+  ylab("")
+```
+
+## Make summary statistics on how many species changed per genus etc for the tree
+```{r}
+tree_associations <- associations(siamcat_Mesnage_2023_before_after)
+tree_associations$mOTU <- rownames(tree_associations)
+Mesnage_2023_taxonomy_tree <- as.data.frame(mOTU_profiles_Mesnage_2023_taxonomy) %>% rownames_to_column("mOTU_Complete")
+## Merge with taxonomy to calculate number species changed per genus / family
+tree_associations_taxonomy <- tree_associations %>% left_join(Mesnage_2023_taxonomy_tree, by = c("mOTU" = "mOTU_Complete"))
+## Now have to remove everything that doesn't really have a genus identifier, starting with gen.
+tree_associations_taxonomy <- tree_associations_taxonomy %>% filter(!str_detect(Genus, "gen. "))
+tree_associations_taxonomy$Genus <- gsub("g__", "", tree_associations_taxonomy$Genus)
+tree_associations_taxonomy$Phylum <- gsub("p__", "", tree_associations_taxonomy$Phylum)
+#tree_associations_taxonomy$Genus <- gsub(" gen. incertae sedis", "", tree_associations_taxonomy$Genus) ## Discuss some of these names with Georg, e.g.
+
+number_species_changed_genus <- tree_associations_taxonomy %>% group_by(Genus) %>% mutate(number_motus_per_genus = n_distinct(mOTU_number)) %>% summarize(enriched = sum(p.adj < 0.05 & fc > 0), depleted = sum(p.adj < 0.05 & fc < 0), unchanged = sum(p.adj > 0.05))
+
+motus_per_genus <- tree_associations_taxonomy %>% group_by(Genus) %>% mutate(number_motus_per_genus = n_distinct(mOTU_number)) %>% ungroup() %>% select(Genus,number_motus_per_genus)
+
+number_species_changed_genus <- number_species_changed_genus %>% left_join(motus_per_genus, by = "Genus") %>% mutate(Enriched_Fraction = enriched / number_motus_per_genus, Depleted_Fraction = depleted / number_motus_per_genus, unchanged_fraction = unchanged / number_motus_per_genus) %>% distinct()
+## Add phylum name back in for visualization purposes later on
+#number_species_changed_genus %>% left_join(tree_associations_taxonomy %>% select(Phylum, Genus), by = "Genus") %>% distinct() ## Need the distinct as otherwise it starts multiplying all the rows.
+```
+
+## Now also test differential abundance at genus level
+```{r}
+## First have to apply a small trick to make genera merge and avoid not merging of genera with different phylum annotations or so
+Mesnage_2023_tax_ps_rel_abun_before_after_genus <- Mesnage_2023_tax_ps_rel_abun_before_after
+tax_table_original <- tax_table(Mesnage_2023_tax_ps_rel_abun_before_after_genus)
+
+# Set all taxonomy levels (except Genus) to "NA"
+tax_table_updated <- tax_table_original
+tax_table_updated[,-c(6,7)] <- NA  # Keep Genus and Species level
+
+# Replace the taxonomy table in the phyloseq object with the updated one
+tax_table(Mesnage_2023_tax_ps_rel_abun_before_after_genus) <- tax_table_updated
+
+Mesnage_2023_tax_ps_rel_abun_before_after_genus <- tax_glom(Mesnage_2023_tax_ps_rel_abun_before_after_genus, "Genus")
+Mesnage_2023_tax_ps_rel_abun_before_after_genus_long <- psmelt(Mesnage_2023_tax_ps_rel_abun_before_after_genus)
+genera_to_be_removed <- Mesnage_2023_tax_ps_rel_abun_before_after_genus_long %>% filter(str_detect(Genus, "gen. ")) %>% distinct(Genus)
+genera_to_retain <- paste("g__",number_species_changed_genus$Genus, sep = "")
+
+## Also remove genera with prevalence < 10% already, so that the exact same genera can be tested. They will subsequently be further trimmed probably, but then the info is there at least.
+
+Mesnage_2023_tax_ps_rel_abun_before_after_genus_trimmed <- subset_taxa(Mesnage_2023_tax_ps_rel_abun_before_after_genus, Genus %in% genera_to_retain)
+
+## Now perform association testing of these 100 genera
+label.Mesnage_2023_before_after_genus <- create.label(meta = sample_data(Mesnage_2023_tax_ps_rel_abun_before_after_genus_trimmed), label='Timepoint', case = "After")
+siamcat_Mesnage_2023_before_after_genus <- siamcat(phyloseq = Mesnage_2023_tax_ps_rel_abun_before_after_genus_trimmed, label = label.Mesnage_2023_before_after_genus)
+show(siamcat_Mesnage_2023_before_after_genus)
+siamcat_Mesnage_2023_before_after_genus <- filter.features(siamcat_Mesnage_2023_before_after_genus, filter.method = 'prevalence',cutoff = 0.1)
+siamcat_Mesnage_2023_before_after_genus <- normalize.features(siamcat_Mesnage_2023_before_after_genus, norm.method = "log.std", norm.param = list(log.n0 = 1e-4, sd.min.q = 0.0)) 
+
+## Fit a random intercept per patient
+siamcat_Mesnage_2023_before_after_genus <- check.associations(siamcat_Mesnage_2023_before_after_genus, formula = "feat~label+(1|Study_Patient)", test = "lm", feature.type = "normalized")
+
+siamcat_Mesnage_2023_before_after_genus_assocations <- associations(siamcat_Mesnage_2023_before_after_genus)
+siamcat_Mesnage_2023_before_after_genus_assocations <- siamcat_Mesnage_2023_before_after_genus_assocations %>% rownames_to_column("Genus")
+siamcat_Mesnage_2023_before_after_genus_assocations$Genus <- gsub(".*\\|g__([^|]+)\\|.*", "\\1", siamcat_Mesnage_2023_before_after_genus_assocations$Genus)
+
+write_xlsx(siamcat_Mesnage_2023_before_after_genus_assocations %>% select(Genus, fc, p.val, p.adj) %>% arrange(desc(fc)) %>% rename("gfc" = fc), here("Supplementary_Tables","TableS3.xlsx"))
+
+## Now compute prevalence and mean abundance for each of the genera
+Mesnage_2023_before_after_long_genus_trimmed <- psmelt(Mesnage_2023_tax_ps_rel_abun_before_after_genus_trimmed)
+Mesnage_2023_before_after_long_genus_summaries <- Mesnage_2023_before_after_long_genus_trimmed %>% group_by(Genus) %>% summarise(prevalence = sum(Abundance > 0) / n(), mean_abundance = mean(Abundance)) %>% ungroup()
+Mesnage_2023_before_after_long_genus_summaries$Genus <- gsub("g__", "", Mesnage_2023_before_after_long_genus_summaries$Genus)
+```
+
+## Do additional filtering based on prevalence and abundance to reduce the number of genera in the tree
+```{r}
+## Now do a bit of filtering based on prevalence and abundance, e.g. a genus should be prevalent in at least 25% of included samples.
+number_species_changed_genus <- number_species_changed_genus %>% left_join(siamcat_Mesnage_2023_before_after_genus_assocations %>% select(Genus, fc), by = "Genus")
+
+number_species_changed_genus <- number_species_changed_genus %>% left_join(Mesnage_2023_before_after_long_genus_summaries, by = "Genus") %>% filter(prevalence > 0.4) ## To reduce the number of included genera in the tree and to make it a bit more interpretable.
+number_species_changed_genus <- number_species_changed_genus %>% filter(prevalence > 0.4) %>% mutate(number_to_be_pasted = paste("{",number_motus_per_genus,"}", sep = "")) %>% mutate(Genus_only = Genus) %>% mutate(Genus = paste(Genus, number_to_be_pasted, sep = "_"))
+```
+
+## Prepare files for taxonomic tree, this is basd on Nic's code, so credits to him
+```{r}
+library(taxonomizr)
+library(ape)
+library(RColorBrewer)
+
+Mesnage_2023_long <- psmelt(Mesnage_2023_tax_ps_rel_abun_before_after) %>% select(c(Sample, Abundance,mOTU_number)) %>% mutate(mOTU_number = gsub("v31", "v3", mOTU_number))
+motus3.0_taxonomy <- read_tsv(here("Tree_template_files", "motus3.0_taxonomy.tsv"))
+
+Mesnage_2023_long_incl_tax <- Mesnage_2023_long %>% left_join(motus3.0_taxonomy, by = c("mOTU_number" = "mOTUs_ID")) %>% dplyr::rename(mOTU_ID = mOTU_number, kingdom = Kingdom, phylum = Phylum, class = Class, order = Order, family = Family, genus = Genus, species = Species)
+
+taxs <- Mesnage_2023_long_incl_tax %>%
+  select(kingdom, phylum, class, order, family, genus) %>%
+  group_by(kingdom, phylum, class, order, family, genus) %>%
+  tally() %>%
+  arrange(desc(n)) %>%
+  select(-n) %>%
+  ungroup() %>%
+  distinct(genus, .keep_all = T)
+
+taxs <- taxs %>%
+  filter(!str_detect(genus, "annotated")) %>%
+  filter(!str_detect(genus, "sedis")) %>%
+  filter(genus != '') %>%
+  distinct() %>%
+  mutate(genus = str_split_fixed(genus, " ", n = 2)[, 2])
+
+taxs <- taxs %>% left_join(number_species_changed_genus %>% select(number_to_be_pasted, Genus_only), by = c("genus" = "Genus_only")) %>% mutate(genus = paste(genus, number_to_be_pasted, sep = "_")) %>% select(-number_to_be_pasted)# %>% filter(genus_incl_number %in% number_species_changed_genus$Genus)
+
+tree <- makeNewick(taxs %>% as.matrix())
+fileConn <- file(here("Tree_Files", "tree.genus.ncbi.Mesnage_2023.nwk"))
+writeLines(tree, fileConn)
+close(fileConn)
+
+tree.raw <- ape::read.tree(here("Tree_Files", "tree.genus.ncbi.Mesnage_2023.nwk")) ## Somehow the [number_mOTUs] is not saved, so I need to replace this
+genus_both_options <- number_species_changed_genus %>% select(Genus, Genus_only)
+tree.filtered <- drop.tip(tree.raw, tip = tree.raw$tip.label[!tree.raw$tip.label %in% (number_species_changed_genus$Genus)], collapse.singles = F)
+
+write.tree(phy = tree.filtered, file = here("Tree_Files", "tree.genus.ncbi.Mesnage_2023.filtered.nwk")) ## So this is the tree that can be dragged into iTOL later on
+```
+
+## Populate the tree
+```{r}
+file.copy(from = here("Tree_template_files", "dataset_simplebar_template.txt"), here("Tree_Files", "Enriched_species.txt"), overwrite = T)
+filePath <- here("Tree_Files", "Enriched_species.txt")
+
+## The way to get the bar plots perfectly aligned is through the maximum bar size option. To achieve perfect alignment, one should . E.g. for enriched (maximum value 9) versus depleted (maximum value 32), one should perform 32 / 9 and then divide the maximum bar width of depleted by this value, which should then be entered for enriched.
+a <- 200 / (32 / 9)
+b <- 200 / (32 / 19)
+
+tx  <- readLines(filePath)
+#tx <- str_replace(tx, "#DATASET_SCALE,2000,10000,20000", "DATASET_SCALE,0-0-#000000-1-1-1, DATASET_SCALE,10-10-#000000-1-1-1,20-20-#000000-1-1-1,30-30-#000000-1-1-1,40-40-#000000-1-1-1")
+tx <- str_replace(tx, "#DATASET_SCALE,2000,10000,20000", "DATASET_SCALE,0-0-#000000-1-1-1, DATASET_SCALE,0.2-0.2-#000000-1-1-1,0.4-0.4-#000000-1-1-1,0.6-0.6-#000000-1-1-1,0.8-0.8-#000000-1-1-1,1.0-1.0-#000000-1-1-1")
+tx <- str_replace(tx, "DATASET_LABEL,label 1", "DATASET_LABEL, Number of mOTUs")
+tx <- str_replace(tx, "COLOR,#ff0000", "COLOR,#D41645")
+tx <- str_replace(tx, "#WIDTH,1000", "WIDTH,200")
+tx <- str_replace(tx, "#BAR_SHIFT,0", "BAR_SHIFT,1")
+tx <- str_replace(tx, "#MARGIN,0", "#MARGIN,-200")
+writeLines(tx, con=filePath)
+
+enriched_species <- number_species_changed_genus %>% select(Genus, Enriched_Fraction) #select(Genus, enriched)
+for (i in 1:dim(enriched_species)[1]){
+  print(i)
+  family <- enriched_species$Genus[i]
+  value <- enriched_species$Enriched_Fraction[i]
+  write(str_c(family, ",",value), filePath, append = T)
+}
+
+file.copy(from = here("Tree_template_files", "dataset_simplebar_template.txt"), here("Tree_Files", "Depleted_species.txt"), overwrite = T)
+filePath <- here("Tree_Files", "Depleted_species.txt")
+
+tx  <- readLines(filePath)
+#tx <- str_replace(tx, "#DATASET_SCALE,2000,10000,20000", "DATASET_SCALE,0-0-#000000-2-1-3, DATASET_SCALE,10-10-#000000-2-1-3,20-20-#000000-2-1-3,30-30-#000000-2-1-3,40-40-#000000-2-1-3")
+tx <- str_replace(tx, "#DATASET_SCALE,2000,10000,20000", "DATASET_SCALE,0-0-#000000-1-1-1, DATASET_SCALE,0.2-0.2-#000000-1-1-1,0.4-0.4-#000000-1-1-1,0.6-0.6-#000000-1-1-1,0.8-0.8-#000000-1-1-1,1.0-1.0-#000000-1-1-1")
+tx <- str_replace(tx, "DATASET_LABEL,label 1", "DATASET_LABEL, Number of mOTUs")
+tx <- str_replace(tx, "COLOR,#ff0000", "COLOR,#3B6FB6")
+tx <- str_replace(tx, "#WIDTH,1000", "WIDTH,200")
+tx <- str_replace(tx, "#BAR_SHIFT,0", "BAR_SHIFT,0")
+tx <- str_replace(tx, "#MARGIN,0", "#MARGIN,-200")
+writeLines(tx, con=filePath)
+
+depleted_species <- number_species_changed_genus %>% select(Genus, Depleted_Fraction) #select(Genus, depleted)
+for (i in 1:dim(depleted_species)[1]){
+  print(i)
+  family <- depleted_species$Genus[i]
+  value <- depleted_species$Depleted_Fraction[i]
+  write(str_c(family, ",",value), filePath, append = T)
+}
+
+file.copy(from = here("Tree_template_files", "dataset_simplebar_template.txt"), here("Tree_Files", "Unchanged_species.txt"), overwrite = T)
+filePath <- here("Tree_Files", "Unchanged_species.txt")
+
+tx  <- readLines(filePath)
+#tx <- str_replace(tx, "#DATASET_SCALE,2000,10000,20000", "DATASET_SCALE,0-0-#000000-2-1-3, DATASET_SCALE,10-10-#000000-2-1-3,20-20-#000000-2-1-3,30-30-#000000-2-1-3,40-40-#000000-2-1-3")
+tx <- str_replace(tx, "#DATASET_SCALE,2000,10000,20000", "DATASET_SCALE,0-0-#000000-1-1-1, DATASET_SCALE,0.2-0.2-#000000-1-1-1,0.4-0.4-#000000-1-1-1,0.6-0.6-#000000-1-1-1,0.8-0.8-#000000-1-1-1,1.0-1.0-#000000-1-1-1")
+tx <- str_replace(tx, "DATASET_LABEL,label 1", "DATASET_LABEL, Number of mOTUs")
+tx <- str_replace(tx, "COLOR,#ff0000", "COLOR,#808080")
+tx <- str_replace(tx, "#WIDTH,1000", "WIDTH,200")
+tx <- str_replace(tx, "#BAR_SHIFT,0", "BAR_SHIFT,2")
+tx <- str_replace(tx, "#MARGIN,0", "#MARGIN,-200")
+writeLines(tx, con=filePath)
+
+unchanged_species <- number_species_changed_genus %>% select(Genus, unchanged_fraction) #select(Genus, unchanged)
+for (i in 1:dim(unchanged_species)[1]){
+  print(i)
+  family <- unchanged_species$Genus[i]
+  value <- unchanged_species$unchanged_fraction[i]
+  write(str_c(family, ",",value), filePath, append = T)
+}
+
+## Phylum node symbols
+phyla <- unique(taxs$phylum)
+phyla <- gsub(" ", "", phyla)
+unique_phyla <- tree.filtered$node.label
+unique_phyla <- as.data.frame(unique_phyla) %>% filter(unique_phyla %in% phyla)
+unique_phyla <- unique_phyla$unique_phyla
+
+colors <- colorRampPalette(brewer.pal(max(16, length(unique_phyla)+2), "Set2"))(length(unique_phyla)+2)
+colors <- sample(colors, size = length(unique_phyla))
+color_data <- data.frame(phyla = unique_phyla, colors = colors)
+
+file.copy(from = here("Tree_template_files", "dataset_symbols_template.txt"), here("Tree_Files", "phylum_symbols_variation.txt"), overwrite = T)
+filePath <- here("Tree_Files", "phylum_symbols_variation.txt")
+tx  <- readLines(filePath)
+tx2  <- gsub(pattern = "MAXIMUM_SIZE,50", replace = "MAXIMUM_SIZE,20", x = tx)
+writeLines(tx2, con=filePath)
+
+#for (i in 1:dim(color_data)[1]){
+#  phylum <- color_data$phyla[i]
+#  write(str_c(phylum, "2", 10, "#000000", "1", "1",  sep = ",", collapse = ","), filePath, append = T)
+#}
+
+for (i in 1:dim(color_data)[1]){
+  phylum <- color_data$phyla[i]
+  color_phylum <- color_data$colors[i]
+  write(str_c(phylum, 2, 10, color_phylum, "1", "1",  sep = ",", collapse = ","), filePath, append = T)
+}
+
+## Annotate leaf nodes with mean genus abundances
+file.copy(from = here("Tree_template_files", "dataset_symbols_template.txt"), here("Tree_Files", "Mean_Genus_Abundances.txt"), overwrite = T)
+filePath <- here("Tree_Files", "Mean_Genus_Abundances.txt")
+tx  <- readLines(filePath)
+tx2  <- gsub(pattern = "MAXIMUM_SIZE,50", replace = "MAXIMUM_SIZE,25", x = tx)
+writeLines(tx, con=filePath)
+
+tmp <- number_species_changed_genus %>% select(Genus, mean_abundance)
+
+for (i in 1:dim(tmp)[1]){
+  family <- tmp$Genus[i]
+  val <- tmp$mean_abundance[i[]]
+  write(str_c(family, "2", 1/-log10(val), "#000000", "1", "1",  sep = ",", collapse = ","), filePath, append = T)
+}
+
+## Heatmap stripe with gFC
+file.copy(from = here("Tree_template_files", "dataset_heatmap_template.txt"), here("Tree_Files", "Heatmap_gfc.txt"), overwrite = T)
+filePath <- here("Tree_Files", "Heatmap_gfc.txt")
+tx  <- readLines(filePath)
+tx  <- gsub(pattern = "#COLOR_MIN #ff0000", replace = "COLOR_MIN #3B6FB6", x = tx)
+tx  <- gsub(pattern = "#COLOR_MAX #0000ff", replace = "COLOR_MAX #D41645", x = tx)
+tx  <- gsub(pattern = "#USE_MID_COLOR 1", replace = "USE_MID_COLOR 1", x = tx)
+#tx  <- gsub(pattern = "#COLOR_MID #ffff00", replace = "COLOR_MID #808080", x = tx)
+tx  <- gsub(pattern = "#COLOR_MID #ffff00", replace = "COLOR_MID #FFFFFF", x = tx)
+tx  <- gsub(pattern = "#STRIP_WIDTH 25", replace = "STRIP_WIDTH 75", x = tx)
+tx  <- gsub(pattern = "#MARGIN 0", replace = "MARGIN 100", x = tx)
+tx  <- gsub(pattern = "FIELD_LABELS f1 f2 f3 f4 f5 f6", replace = "FIELD_LABELS gFC", x = tx)
+
+#tx  <- gsub(pattern = "FIELD_LABELS f1 f2 f3 f4 f5 f6", replace = str_c("FIELD_LABELS", str_c(substrateNsByGenus %>% ungroup() %>% select(-c(Genus, stri)) %>% colnames(), sep = ' ', collapse = " "), sep = " ", collapse = " "), x = tx)
+
+
+tx  <- gsub(pattern = "#USER_MIN_VALUE 0", replace = str_c("USER_MIN_VALUE ", -1.5, sep = " ", collapse = " "), x = tx)
+tx  <- gsub(pattern = "#USER_MID_VALUE 500", replace = "USER_MID_VALUE 0", x = tx)
+tx  <- gsub(pattern = "#USER_MAX_VALUE 1000", replace = str_c("USER_MAX_VALUE ", 1.5, sep = " ", collapse = " "), x = tx)
+writeLines(tx, con=filePath)
+heatmap_stripes_gfc <- number_species_changed_genus %>% select(Genus, fc)
+
+for (i in 1:dim(heatmap_stripes_gfc)[1]){
+  family <- heatmap_stripes_gfc$Genus[i]
+  write(str_c(family, heatmap_stripes_gfc$fc[i], sep = " ", collapse = " "), filePath, append = T)
+}
+
+
+## To do manually in iTOL: In the basic control panel, change dashed lines to 0 and shift to 60px. Bar thickness should all go to 0.3. Set maximum bar sizes to 600 each and strip width of the heatmap to 150px
+```
+
+## Manually extract legend for sizes of the dots in Illustrator. Remove this before pushing to Git, not relevant
+```{r}
+dot_size_tree <- ggplot(data = data.frame(x = 1:2, y = c(log10(min(number_species_changed_genus$mean_abundance)), log10(max(number_species_changed_genus$mean_abundance))))) + 
+  geom_point(aes(x = x, y = y, size = y)) +
+  scale_radius(breaks = c(-4, -3, -2, -1, log10(max(number_species_changed_genus$mean_abundance)))) +
+  theme_classic()
+
+## Rather rescale at 0.01, 0.1, 1 and 10%
+## For illustrator, maximum size is 18.5807 for Bacteroides (which is 0.1361311). Per %, this mean
+bacteroides_size <- 18.5807
+bacteroides_percentage <- 100*0.1361311
+size_per_percent <- bacteroides_size / bacteroides_percentage
+
+1/-log10(0.1361311)
+
+bacteroides_max_value_itol <- 1.15467767960889
+bacteroides_rel_abun <- 0.1361311
+bacteroides_illustrator_size <- 18.5807
+roseburia_value_itol <- 0.568153677716613
+roseburia_rel_Abun <- 0.01737452
+roseburia_illustrator_size <- 9.1422
+
+bacteroides_illustrator_size <- 11.6128
+
+multiplication_factor <- bacteroides_illustrator_size / bacteroides_max_value_itol
+illustrator_percentage_10_percent_factor <- 1/-log10(0.1) * multiplication_factor
+illustrator_percentage_1_percent_factor <- 1/-log10(0.01) * multiplication_factor
+illustrator_percentage_01_percent_factor <- 1/-log10(0.001) * multiplication_factor
+illustrator_percentage_001_percent_factor <- 1/-log10(0.0001) * multiplication_factor
+
+percent_10_size <- 10*size_per_percent ## and note that dividing the size in illustrator by 50% (e.g. from 10 to 5) means a reduction in relative abundance of factor 10
