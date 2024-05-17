@@ -8,7 +8,7 @@ output: html_document
 ## Figure 2A
 ```{r}
 pcoa_info_ltfu <- ordinate(Mesnage_2023_tax_ps_rel_abun_4, method='PCoA', distance = 'bray')
-Fig_2A <- plot_ordination(Mesnage_2023_tax_ps_rel_abun_4, pcoa_info_ltfu, color="Timepoint") + scale_color_manual(values=c('#3B6FB6','#D41645','grey','orange')) + theme_publication() + theme(legend.position = "none") + xlab("PC1 [10.2%]") + ylab("PC2 [8.0%]")
+Fig_2A <- plot_ordination(Mesnage_2023_tax_ps_rel_abun_4, pcoa_info_ltfu, color="Timepoint") + scale_color_manual(values=c('#366eb2','#bc3f60','#b25336','#ffb452')) + theme_publication() + theme(legend.position = "none") + xlab("PC1 [10.2%]") + ylab("PC2 [8.0%]")
 ```
 
 ## Figure 2B
@@ -43,8 +43,8 @@ Fig_2B <- ggplot(meta_alpha_diversities) +
 ## Figure 2C
 ```{r}
 ## Remove patients without baseline samples
-remove_patients <- microbiome::meta(Mesnage_2023_tax_ps_rel_abun_ltfu) %>% group_by(Study_Patient) %>% filter("Before" %in% Timepoint) %>% ungroup()
-Mesnage_2023_tax_ps_rel_abun_ltfu_bc <- Mesnage_2023_tax_ps_rel_abun_ltfu %>% ps_filter(Study_Patient %in% remove_patients$Study_Patient)
+remove_patients <- microbiome::meta(Mesnage_2023_tax_ps_rel_abun) %>% group_by(Study_Patient) %>% filter("Before" %in% Timepoint) %>% ungroup()
+Mesnage_2023_tax_ps_rel_abun_ltfu_bc <- Mesnage_2023_tax_ps_rel_abun %>% ps_filter(Study_Patient %in% remove_patients$Study_Patient)
 
 columns <- c("sample.id", "BC_diss", "Study_Patient", "Timepoint") 
 df_bc_quantification <- data.frame(matrix(nrow = 0, ncol = length(columns))) 

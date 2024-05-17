@@ -27,7 +27,7 @@ HL1_p_values <- HL1_p_values %>% mutate(y.position = ifelse(HL1 == "amino acid d
 
 write_xlsx(HL1_p_values %>% select(HL1, group2, p_value) %>% rename("HL1_GMMs" = HL1, "Timepoint_compared_to_baseline" = group2, "p.val" = p_value), here("Supplementary_Tables","TableS5.xlsx"))
 
-## For a paper figure, use AA degradation, carbohydrate, gas metabolism, amines and polyamines degradation, glycoprotin degradation & lipid degradation. Make those figures here
+## For a paper figure, carbohydrate, amines and polyamines degradation & glycoprotein degradation. Make those figures here
 
 amines_polyamines <- ggplot(HL1_sums_scaled %>% filter(HL1 == "amines and polyamines degradation")) +
   theme_publication() +
@@ -212,7 +212,7 @@ row_annotations_DF <- ggplot(DF_annotations_final %>% filter(Subfamily %in% cazy
   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
   theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
   theme(legend.position = "none") +
-  xlab("p-value\n 2.0e-03") + 
+  xlab("p-value\n 8.4e-04") + 
   ylab("")
 
 ## For GAGs
@@ -229,7 +229,7 @@ row_annotations_GAG <- ggplot(GAG_annotations_final %>% filter(Subfamily %in% ca
   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
   theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
   theme(legend.position = "none") +
-  xlab("p-value\n 9.6e-04") + 
+  xlab("p-value\n 3.8e-04") + 
   ylab("")
 
 ## For mucin
@@ -246,7 +246,7 @@ row_annotations_Mucin <- ggplot(Mucin_annotations_final %>% filter(Subfamily %in
   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
   theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
   theme(legend.position = "none") +
-  xlab("p-value\n 2.4e-04") + 
+  xlab("p-value\n 1.9e-04") + 
   ylab("")
 
 library(aplot)
@@ -288,7 +288,7 @@ prevalence_heatmap_genus <- ggplot(genus_cazy_filtered %>% mutate(cazy_family=fa
   geom_hline(yintercept = 0.5 + 0:40, linewidth = 0.001, color = "gray65") +
   geom_hline(yintercept = 20.5, color = "black") +
   geom_vline(xintercept = 32.5) +
-  theme(axis.text.y = element_blank()) +
+  #theme(axis.text.y = element_blank()) +
   theme(axis.ticks = element_blank()) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
   theme(legend.position = "none") +
@@ -352,4 +352,3 @@ sc.obj_native_ML_blocked_cazy <- evaluate.predictions(sc.obj_native_ML_blocked_c
  
 model.evaluation.plot(sc.obj_native_ML_blocked_cazy, colours = c("dodgerblue"), point_coords = c(0.29, 0.57))
 ```
-
