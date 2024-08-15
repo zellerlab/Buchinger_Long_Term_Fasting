@@ -38,6 +38,33 @@ Fig_2B <- ggplot(meta_alpha_diversities) +
   ylab("Shannon diversity") +
   geom_text(data = shannon_n_samples_per_timepoint %>% select(Timepoint, n), aes(x = Timepoint, y = 2.9, label = paste0("n=", n)), size = 2) +
   theme(legend.position = "none")
+
+## Add a plot with only the individuals with 4 timepoints for rebuttal only
+individuals_4_samples <- microbiome::meta(Mesnage_2023_tax_ps_rel_abun_4) %>% distinct(Study_Patient)
+meta_alpha_diversities_4_samples <- alpha_diversities %>% left_join(Mesnage_2023_metadata, by = c("SampleID" = "sample.id")) %>% filter(Study_Patient %in% individuals_4_samples$Study_Patient)
+
+shannon_df_lmer_4_samples <- lmer(Shannon ~ Timepoint + (1|Study_Patient), data = meta_alpha_diversities_4_samples)
+summary(shannon_df_lmer_4_samples)
+
+## Hack p-values into the figure, the ones without any trend (p>0.1) can be removed I suppose
+threshold <- 0.001
+shannon_df_significance_4_samples <- data.frame(summary(shannon_df_lmer_4_samples)$coefficients) %>% rownames_to_column("group2") %>% filter(group2 != "(Intercept)") %>% mutate(group2 = gsub("Timepoint", "", group2)) %>% mutate(group1 = "Before") %>% rename("p_value" = 6) %>% select(group2, p_value, group1) %>% mutate(p_value = ifelse(p_value < threshold, format(p_value, scientific = TRUE, digits = 2), sprintf("%.3f", p_value))) %>% mutate(p_value = as.numeric(p_value))
+
+shannon_n_samples_per_timepoint_4_samples <- meta_alpha_diversities_4_samples %>% count(Timepoint)
+
+Fig_2B_4_samples <- ggplot(meta_alpha_diversities_4_samples) +
+  theme_publication() +
+  aes(x = Timepoint, y = Shannon) +
+  geom_boxplot(aes(fill = Timepoint), outlier.shape = NA, alpha = 0.8) +
+  geom_jitter(aes(col = Timepoint), position = position_jitterdodge(jitter.width = 0.1), alpha = 0.6) +
+  stat_pvalue_manual(shannon_df_significance_4_samples, x = "group2", y.position = 5.4, label = "p_value", color = "black", size = 2) + ## color = "group2"
+  scale_fill_manual(values=c('#366eb2','#bc3f60','#b25336','#ffb452')) +
+  scale_color_manual(values=c('#366eb2','#bc3f60','#b25336','#ffb452')) +
+  theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  ylab("Shannon diversity") +
+  geom_text(data = shannon_n_samples_per_timepoint_4_samples %>% select(Timepoint, n), aes(x = Timepoint, y = 2.9, label = paste0("n=", n)), size = 2) +
+  theme(legend.position = "none")
+
 ```
 
 ## Figure 2C
