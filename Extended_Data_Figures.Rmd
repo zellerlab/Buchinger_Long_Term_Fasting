@@ -47,7 +47,7 @@ A_muciniphila_Maifeld_figure <- ggplot(Maifeld_2021_before_after_long_Akkermansi
   ylab("") +
   ggtitle("Maifeld 2021")
 
-Extended_Data_Fig1 <- A_muciniphila_Mesnage_figure + A_muciniphila_Maifeld_figure
+Extended_Data_Fig1 <- A_muciniphila_Mesnage_figure + A_muciniphila_Maifeld_figure + plot_layout(guides = "collect") & theme(legend.position = "bottom")
 ```
 
 ## Extended Data Figure 2
