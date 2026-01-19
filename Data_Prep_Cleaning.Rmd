@@ -108,7 +108,8 @@ CAZy_Mesnage_2023_otu_table <- otu_table(CAZy_Mesnage_2023, taxa_are_rows = TRUE
 CAZy_Mesnage_2023_ps <- phyloseq(CAZy_Mesnage_2023_otu_table, metadata_full_taxonomy_Mesnage_2023_ps)
 CAZy_Mesnage_2023_ps_before_after <- CAZy_Mesnage_2023_ps %>% ps_filter(Timepoint == "Before" | Timepoint == "After")
 
-completed_substrate_annotations <- read_xlsx(here("Other_Required_Data", "20230607_glycan_annotations_cleaned.xlsx"))
+#completed_substrate_annotations <- read_xlsx(here("Other_Required_Data", "20230607_glycan_annotations_cleaned.xlsx"))
+completed_substrate_annotations <- read_xlsx(here("Other_Required_Data", "20250219_Table_S1_incl_dbCAN3_annotations.xlsx"))
 glycan_annotations_final_cleaned <- completed_substrate_annotations %>% select(c(Family:Subfamily,ORIGIN:FUNCTION_AT_DESTINATION_3, Glycan_annotation))
 glycan_annotations_final_cleaned_long <- glycan_annotations_final_cleaned %>% separate_rows(ORIGIN,sep=",") %>% separate_rows(FUNCTION_IN_ORIGIN,sep=",") %>% separate_rows(FUNCTION_AT_DESTINATION_1,sep=",") %>% separate_rows(FUNCTION_AT_DESTINATION_2,sep=",") %>% separate_rows(FUNCTION_AT_DESTINATION_3,sep=",")
 glycan_annotations_cleaned <- glycan_annotations_final_cleaned

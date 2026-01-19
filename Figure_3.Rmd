@@ -151,7 +151,7 @@ siamcat_Mesnage_2023_before_after_cazy_assocations$cazyme_fam <- rownames(siamca
 siamcat_Mesnage_2023_before_after_cazy_assocations$cazyme_fam <- gsub(".*s__", "s__", siamcat_Mesnage_2023_before_after_cazy_assocations$cazyme_fam)
 siamcat_Mesnage_2023_before_after_cazy_assocations$cazyme_fam <- gsub("\\[.*?\\]", "", siamcat_Mesnage_2023_before_after_cazy_assocations$cazyme_fam)
 
-write_xlsx(siamcat_Mesnage_2023_before_after_cazy_assocations %>% select(cazyme_fam, fc, p.val, p.adj) %>% arrange(desc(fc)) %>% rename("gfc" = fc, "CAZyme" = cazyme_fam), here("Supplementary_Tables","TableS6.xlsx"))
+#write_xlsx(siamcat_Mesnage_2023_before_after_cazy_assocations %>% select(cazyme_fam, fc, p.val, p.adj) %>% arrange(desc(fc)) %>% rename("gfc" = fc, "CAZyme" = cazyme_fam), here("Supplementary_Tables","TableS6.xlsx"))
 
 bar_plots_Mesnage_2023_cazy <- siamcat_Mesnage_2023_before_after_cazy_assocations %>% mutate(l=case_when(p.adj < 0.05~'*', TRUE~'')) %>% filter(p.adj < 0.05) %>% mutate(cazyme_fam = fct_reorder(cazyme_fam, fc, .desc = TRUE)) %>% mutate(Category=case_when(fc > 0 ~ "After", fc < 0 ~ "Before")) %>% filter(fc < -0.7 | fc > 0.7)
 
