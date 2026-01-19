@@ -212,7 +212,7 @@ row_annotations_DF <- ggplot(DF_annotations_final %>% filter(Subfamily %in% cazy
   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
   theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
   theme(legend.position = "none") +
-  xlab("p-value\n 8.4e-04") + 
+  xlab("p-value\n 1.1e-02") + 
   ylab("")
 
 ## For GAGs
@@ -229,7 +229,7 @@ row_annotations_GAG <- ggplot(GAG_annotations_final %>% filter(Subfamily %in% ca
   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
   theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
   theme(legend.position = "none") +
-  xlab("p-value\n 3.8e-04") + 
+  xlab("p-value\n 2.8e-03") + 
   ylab("")
 
 ## For mucin
@@ -246,7 +246,7 @@ row_annotations_Mucin <- ggplot(Mucin_annotations_final %>% filter(Subfamily %in
   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
   theme(axis.text.y = element_blank(), axis.ticks.y = element_blank()) +
   theme(legend.position = "none") +
-  xlab("p-value\n 1.9e-04") + 
+  xlab("p-value\n 6.9e-05") + 
   ylab("")
 
 library(aplot)
