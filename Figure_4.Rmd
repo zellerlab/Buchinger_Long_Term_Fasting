@@ -85,7 +85,7 @@ volcano_plot_figure_df <- GenStats_combined_Time %>% filter(term == "timepointen
 volcano_plot_serum_metabolomics <- ggplot(volcano_plot_figure_df) +
   theme_publication() +
   aes(x = estimate, y = -log10(p.adj), color = Direction_change) +
-  geom_point(alpha = 0.7) +
+  geom_point(alpha = 0.7, size = 1) +
   #scale_color_manual(values = c("lightgrey", "black")) +
   scale_color_manual(values = c("#366eb2","#bc3f60", "lightgrey")) +
   ylab("Significance (-log10 p-value)") +
@@ -94,9 +94,10 @@ volcano_plot_serum_metabolomics <- ggplot(volcano_plot_figure_df) +
   geom_vline(xintercept = 0) +
   ggrepel::geom_text_repel(
   data = volcano_plot_figure_df %>% filter(p.adj < 0.0001 & estimate > 0.55 | estimate < -0.55),
-  aes(label = compound), max.overlaps = 10, size = 1.5, color = "black") + 
+  aes(label = compound), max.overlaps = Inf, size = 1.5, color = "black", segment.color = "black", segment.size = 0.3, box.padding = 0.5) + 
   theme(legend.position = "none")
   
+ggsave("Fig4A.pdf", volcano_plot_serum_metabolomics, unit = "mm", height = 70, width = 70)
 ```
 
 ## Fecal metabolomics data
@@ -173,21 +174,24 @@ result_serum_fecal_comparison <- result_serum_fecal_comparison %>% mutate(Signif
   p.adj_serum >= 0.05 & p.adj_feces >= 0.05 ~ "Neither Significant",
 ))
 
-ggplot(result_serum_fecal_comparison) +
+serum_fecal_metaB_overlap <- ggplot(result_serum_fecal_comparison) +
   theme_publication() + 
   aes(x = estimate_serum, y = estimate_feces, color = Significant) +
-  geom_point(alpha = 0.7) +
+  geom_point(alpha = 0.7, size = 1) +
   #scale_color_manual(values = c("#bc3f60", "#366eb2", "yellow", "lightgrey", "black")) +
   scale_color_manual(values = c("#0072B2", "#D55E00", "#009E73", "lightgrey", "#F0E442")) +
   ylab("Enrichment effect size feces") +
   xlab("Enrichment effect size serum") +
   #geom_abline(intercept = 0, slope = 1) +
-  ggrepel::geom_text_repel(data = result_serum_fecal_comparison %>% filter(str_detect(Significant, "Both Significant") | estimate_serum > 0.4 | estimate_feces > 0.4),
-  aes(label = matched_prefix), max.overlaps = 10, size = 2.5, color = "black") +
+  ggrepel::geom_text_repel(data = result_serum_fecal_comparison %>% filter(str_detect(Significant, "Both Significant") | estimate_serum > 0.5 | estimate_feces > 0.5),
+  aes(label = matched_prefix), max.overlaps = Inf, size = 1.5, color = "black", segment.color = "black", segment.size = 0.3, box.padding = 0.3) +
   xlim(-0.6, 0.6) +
   ylim(-1.5, 1.5) +
   geom_hline(yintercept = 0) +
-  geom_vline(xintercept = 0)
+  geom_vline(xintercept = 0) #+
+  theme(legend.position = "none", axis.title = element_blank())
+
+ggsave("Fig4B.pdf", serum_fecal_metaB_overlap, unit = "mm", height = 50, width = 50)
 ```
 
 ## Compare serum to fecal metaB
