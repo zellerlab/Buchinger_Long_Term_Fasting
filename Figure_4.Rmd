@@ -50,10 +50,10 @@ genData_combined_Norm <- genData_combined_Long %>%
   ungroup()
 
 ## Make the supplementary table here
-Table_S7 <- genData_combined_Norm 
-Table_S7$Study_Patient_Timepoint <- paste(Table_S7$Study_Patient, Table_S3$timepoint, sep = "_")
-Table_S7 <- Table_S7 %>% select(compound, normLogIC, Study_Patient_Timepoint) %>% pivot_wider(names_from = compound, values_from = normLogIC) %>% as.data.frame()
-write_xlsx(Table_S7, here("Supplementary_Tables","Table_S7.xlsx"))
+#Table_S7 <- genData_combined_Norm 
+#Table_S7$Study_Patient_Timepoint <- paste(Table_S7$Study_Patient, Table_S3$timepoint, sep = "_")
+#Table_S7 <- Table_S7 %>% select(compound, normLogIC, Study_Patient_Timepoint) %>% pivot_wider(names_from = compound, #values_from = normLogIC) %>% as.data.frame()
+#write_xlsx(Table_S7, here("Supplementary_Tables","Table_S7.xlsx"))
 
 regressionFxn1 <- function(dat){
   lmer(normLogIC ~ timepoint + run + (1|Study_Patient), data = dat) %>% ## Note that the run as a fixed effect is somewhat optional. At least make sure to double-check that output is somewhat comparable with or without this fixed effect
@@ -66,7 +66,7 @@ GenStats_combined_Time <- genData_combined_Norm %>% nest(statData = -compound) %
 GenStats_combined_Time %>% DT::datatable() %>% DT::formatRound(columns = c("estimate", "std.error", "statistic"), digits = 3)
 GenStats_combined_Time <- GenStats_combined_Time %>% group_by(term) %>% mutate(p.adj = p.adjust(p.value, method = "fdr")) 
 
-write_xlsx(GenStats_combined_Time %>% select(compound, term, estimate, p.value, p.adj) %>% arrange(desc(estimate)) %>% rename("Compound" = compound, "Timepoint" = term, "LMM estimate" = estimate, "p.val" = p.value), here("Supplementary_Tables","TableS8.xlsx"))
+#write_xlsx(GenStats_combined_Time %>% select(compound, term, estimate, p.value, p.adj) %>% arrange(desc(estimate)) %>% rename("Compound" = compound, "Timepoint" = term, "LMM estimate" = estimate, "p.val" = p.value), here("Supplementary_Tables","TableS8.xlsx"))
 ```
 
 ## Figure 4A
@@ -97,6 +97,133 @@ volcano_plot_serum_metabolomics <- ggplot(volcano_plot_figure_df) +
   aes(label = compound), max.overlaps = 10, size = 1.5, color = "black") + 
   theme(legend.position = "none")
   
+```
+
+## Fecal metabolomics data
+```{r}
+regressionFxn <- function(dat){
+  lm(log2(ticNormIC) ~ timepoint, data = dat) %>%
+    broom::tidy()
+}  
+
+regressionFxnMix <- function(dat){
+  lmer(log10(ticNormIC) ~ timepoint + (1|patientId), data = dat) %>% ## Previously log10 was log2
+    broom.mixed::tidy()
+}  
+
+faPeaksStatsMix <- faPeaks %>% nest(statData = -compound) %>% mutate(df = purrr::map(statData, regressionFxnMix)) %>% unnest_legacy(df) %>% filter(term != "(Intercept)", effect == "fixed") %>% mutate(p.adj = p.adjust(p.value, method = "fdr")) 
+
+DT::datatable(faPeaksStatsMix)
+
+faSigList <- faPeaksStatsMix %>% 
+  arrange(-statistic) %>% 
+  select(compound) %>% 
+  unlist() %>% 
+  as.vector()  
+
+faPeaksRel <- faPeaks %>% 
+  group_by(patientId, compound) %>% 
+  arrange(timepoint) %>% 
+  mutate(relIC = last(ticNormIC)/first(ticNormIC)) %>% 
+  slice(1)
+
+faPeaks$compound <- factor(faPeaks$compound, levels = faSigList)
+
+volcano_plot_figure_df_feces <- faPeaksStatsMix %>% filter(term == "timepointpost") %>% mutate(Significant = case_when(
+  p.adj < 0.05 ~ "Significant",
+  p.adj >= 0.05 ~ "Non-significant"
+)) %>% mutate(Significant = as.factor(Significant)) %>% mutate(Direction_change = case_when(
+  estimate > 0  & p.adj < 0.05 ~ "Enriched after",
+  estimate < 0  & p.adj < 0.05 ~ "Depleted after",
+  p.adj >= 0.05 ~ "Non-significant"
+))
+
+## Create the plot myself . Note that the timepoint should be End Fast (to align with the other figures/timepoints names)
+
+volcano_plot_feces_metabolomics <- ggplot(volcano_plot_figure_df_feces) +
+  theme_publication() +
+  aes(x = estimate, y = -log10(p.adj), color = Direction_change) +
+  geom_point(alpha = 0.7) +
+  #scale_color_manual(values = c("lightgrey", "black")) +
+  scale_color_manual(values = c("#366eb2","#bc3f60", "lightgrey")) +
+  ylab("Significance (-log10 p-value)") +
+  xlab("Enrichment effect size") +
+  geom_hline(yintercept = 1.30103) +
+  geom_vline(xintercept = 0) +
+  ggrepel::geom_text_repel(
+  data = volcano_plot_figure_df_feces %>% filter(p.adj < 0.01 & estimate > 0.5 | p.adj < 0.01 & estimate < -0.5),
+  aes(label = compound), max.overlaps = 10, size = 2.5, color = "black") #+ 
+  theme(legend.position = "none")
+
+## Compare serum metaB to fecal metaB. Only retain fecal metabolites that are also in serum metaB
+  
+GenStats_combined_Time_serum_fecal_comparison <- GenStats_combined_Time %>% filter(term == "timepointend") %>% filter(str_detect(compound, paste0("^(", paste0(faPeaksStatsMix$compound, collapse = "|"), ")(_|$)")))
+
+GenStats_combined_Time_serum_fecal_comparison <- GenStats_combined_Time_serum_fecal_comparison %>% rename_with(~ paste0(., "_serum")) 
+GenStats_combined_Time_serum_fecal_comparison <- GenStats_combined_Time_serum_fecal_comparison %>% mutate(matched_prefix = str_extract(compound_serum, paste(faPeaksStatsMix$compound, collapse = "|")))
+
+faPeaksStatsMix_serum_fecal_comparison <- faPeaksStatsMix %>% rename_with(~ paste0(., "_feces"))
+result_serum_fecal_comparison <- GenStats_combined_Time_serum_fecal_comparison %>% left_join(faPeaksStatsMix_serum_fecal_comparison, by = c("matched_prefix" = "compound_feces"))
+
+result_serum_fecal_comparison <- result_serum_fecal_comparison %>% mutate(Significant = case_when(
+  p.adj_serum < 0.05 & p.adj_feces < 0.05 & (estimate_serum * estimate_feces < 0) ~ "Both Significant, discrepant \nenrichment direction",
+  p.adj_serum < 0.05 & p.adj_feces < 0.05 ~ "Both Significant",
+  p.adj_serum >= 0.05 & p.adj_feces < 0.05 ~ "Feces Significant",
+  p.adj_serum < 0.05 & p.adj_feces >= 0.05 ~ "Serum Significant",
+  p.adj_serum >= 0.05 & p.adj_feces >= 0.05 ~ "Neither Significant",
+))
+
+ggplot(result_serum_fecal_comparison) +
+  theme_publication() + 
+  aes(x = estimate_serum, y = estimate_feces, color = Significant) +
+  geom_point(alpha = 0.7) +
+  #scale_color_manual(values = c("#bc3f60", "#366eb2", "yellow", "lightgrey", "black")) +
+  scale_color_manual(values = c("#0072B2", "#D55E00", "#009E73", "lightgrey", "#F0E442")) +
+  ylab("Enrichment effect size feces") +
+  xlab("Enrichment effect size serum") +
+  #geom_abline(intercept = 0, slope = 1) +
+  ggrepel::geom_text_repel(data = result_serum_fecal_comparison %>% filter(str_detect(Significant, "Both Significant") | estimate_serum > 0.4 | estimate_feces > 0.4),
+  aes(label = matched_prefix), max.overlaps = 10, size = 2.5, color = "black") +
+  xlim(-0.6, 0.6) +
+  ylim(-1.5, 1.5) +
+  geom_hline(yintercept = 0) +
+  geom_vline(xintercept = 0)
+```
+
+## Compare serum to fecal metaB
+```{r}
+## Some chatgpt magic to do matching based on the strings. Here I want to only retain metabolites from the serum metaB that also occur in fecal metaB
+GenStats_combined_Time_serum_fecal_comparison <- GenStats_combined_Time %>% filter(term == "timepointend") %>% filter(str_detect(compound, paste0("^(", paste0(faPeaksStatsMix$compound, collapse = "|"), ")(_|$)")))
+
+GenStats_combined_Time_serum_fecal_comparison <- GenStats_combined_Time_serum_fecal_comparison %>% rename_with(~ paste0(., "_serum")) 
+GenStats_combined_Time_serum_fecal_comparison <- GenStats_combined_Time_serum_fecal_comparison %>% mutate(matched_prefix = str_extract(compound_serum, paste(faPeaksStatsMix$compound, collapse = "|")))
+
+faPeaksStatsMix_serum_fecal_comparison <- faPeaksStatsMix %>% rename_with(~ paste0(., "_feces"))
+result_serum_fecal_comparison <- GenStats_combined_Time_serum_fecal_comparison %>% left_join(faPeaksStatsMix_serum_fecal_comparison, by = c("matched_prefix" = "compound_feces"))
+
+result_serum_fecal_comparison <- result_serum_fecal_comparison %>% mutate(Significant = case_when(
+  p.adj_serum < 0.05 & p.adj_feces < 0.05 & (estimate_serum * estimate_feces < 0) ~ "Both Significant, discrepant \nenrichment direction",
+  p.adj_serum < 0.05 & p.adj_feces < 0.05 ~ "Both Significant",
+  p.adj_serum >= 0.05 & p.adj_feces < 0.05 ~ "Feces Significant",
+  p.adj_serum < 0.05 & p.adj_feces >= 0.05 ~ "Serum Significant",
+  p.adj_serum >= 0.05 & p.adj_feces >= 0.05 ~ "Neither Significant",
+))
+
+ggplot(result_serum_fecal_comparison) +
+  theme_publication() + 
+  aes(x = estimate_serum, y = estimate_feces, color = Significant) +
+  geom_point(alpha = 0.7) +
+  #scale_color_manual(values = c("#bc3f60", "#366eb2", "yellow", "lightgrey", "black")) +
+  scale_color_manual(values = c("#0072B2", "#D55E00", "#009E73", "lightgrey", "#F0E442")) +
+  ylab("Enrichment effect size feces") +
+  xlab("Enrichment effect size serum") +
+  #geom_abline(intercept = 0, slope = 1) +
+  ggrepel::geom_text_repel(data = result_serum_fecal_comparison %>% filter(str_detect(Significant, "Both Significant") | estimate_serum > 0.4 | estimate_feces > 0.4),
+  aes(label = matched_prefix), max.overlaps = 10, size = 2.5, color = "black") +
+  xlim(-0.6, 0.6) +
+  ylim(-1.5, 1.5) +
+  geom_hline(yintercept = 0) +
+  geom_vline(xintercept = 0)
 ```
 
 ## Figure 4B

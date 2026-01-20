@@ -523,6 +523,35 @@ genData_combined <- rbind(genData_positive, genData_negative)
 genData_meta <- read.csv(here("Serum_Metabolite_Data", "Combined Meta.csv"))
 ```
 
+## Load and prepare fecal metabolomics data
+```{r}
+## Only patientID 11 has just 1 sample, others all before-after
+faPeaks <- read.csv(here("Fecal_Metabolite_Data","Gen_Fecal_Neg_All_Peaks.csv"))
+faMeta <- read.csv(here("Fecal_Metabolite_Data","Gen_Fecal_All_Meta.csv"))
+
+faPeaks <- faPeaks %>% select(compound, starts_with("gen"), starts_with("X"))
+faPeaks <- reshape2::melt(faPeaks)
+
+colnames(faPeaks) <- c("compound", "sampleId", "IC")
+
+faPeaks <- merge(faPeaks, faMeta)
+faPeaks <- faPeaks %>% group_by(compound) %>% mutate(IC = ifelse(IC == 0, min(IC[IC>0]), IC))
+
+faPeaks <- faPeaks %>% 
+  group_by(sampleId) %>% 
+  mutate(med = median(IC)) %>% 
+  mutate(normIC = IC/med) %>% 
+  ungroup() %>% 
+  mutate(min.val = min(abs(normIC[normIC != 0]))/10) %>% 
+  group_by(sampleId) %>% 
+  mutate(normLogIC = log10((normIC + sqrt(normIC^2 + min.val^2))/2))
+
+faPeaks$timepoint <- factor(faPeaks$timepoint, levels = c("pre", "post"))
+
+faPeaks <- faPeaks %>% mutate(ticNormIC = IC/normFactor)
+```
+
+
 ## Load Zeevi and Asnicar data
 ```{r}
 library(ggquantileplot)
