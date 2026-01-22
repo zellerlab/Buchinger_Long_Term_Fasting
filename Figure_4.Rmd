@@ -155,9 +155,11 @@ volcano_plot_feces_metabolomics <- ggplot(volcano_plot_figure_df_feces) +
   data = volcano_plot_figure_df_feces %>% filter(p.adj < 0.01 & estimate > 0.5 | p.adj < 0.01 & estimate < -0.5),
   aes(label = compound), max.overlaps = 10, size = 2.5, color = "black") #+ 
   theme(legend.position = "none")
+```
 
-## Compare serum metaB to fecal metaB. Only retain fecal metabolites that are also in serum metaB
-  
+## Figure 4b Compare serum to fecal metaB
+```{r}
+## Here I want to only retain metabolites from the serum metaB that also occur in fecal metaB
 GenStats_combined_Time_serum_fecal_comparison <- GenStats_combined_Time %>% filter(term == "timepointend") %>% filter(str_detect(compound, paste0("^(", paste0(faPeaksStatsMix$compound, collapse = "|"), ")(_|$)")))
 
 GenStats_combined_Time_serum_fecal_comparison <- GenStats_combined_Time_serum_fecal_comparison %>% rename_with(~ paste0(., "_serum")) 
@@ -177,60 +179,25 @@ result_serum_fecal_comparison <- result_serum_fecal_comparison %>% mutate(Signif
 serum_fecal_metaB_overlap <- ggplot(result_serum_fecal_comparison) +
   theme_publication() + 
   aes(x = estimate_serum, y = estimate_feces, color = Significant) +
-  geom_point(alpha = 0.7, size = 1) +
+  geom_point(alpha = 0.7, size = 0.7) +
   #scale_color_manual(values = c("#bc3f60", "#366eb2", "yellow", "lightgrey", "black")) +
   scale_color_manual(values = c("#0072B2", "#D55E00", "#009E73", "lightgrey", "#F0E442")) +
-  ylab("Enrichment effect size feces") +
-  xlab("Enrichment effect size serum") +
-  #geom_abline(intercept = 0, slope = 1) +
+  ylab("") +
+  xlab("") +
   ggrepel::geom_text_repel(data = result_serum_fecal_comparison %>% filter(str_detect(Significant, "Both Significant") | estimate_serum > 0.5 | estimate_feces > 0.5),
   aes(label = matched_prefix), max.overlaps = Inf, size = 1.5, color = "black", segment.color = "black", segment.size = 0.3, box.padding = 0.3) +
   xlim(-0.6, 0.6) +
   ylim(-1.5, 1.5) +
   geom_hline(yintercept = 0) +
-  geom_vline(xintercept = 0) #+
-  theme(legend.position = "none", axis.title = element_blank())
+  geom_vline(xintercept = 0) +
+  geom_abline(slope = 1, linewidth = 0.4) + 
+  theme(legend.position = "none")
 
 ggsave("Fig4B.pdf", serum_fecal_metaB_overlap, unit = "mm", height = 50, width = 50)
+
 ```
 
-## Compare serum to fecal metaB
-```{r}
-## Some chatgpt magic to do matching based on the strings. Here I want to only retain metabolites from the serum metaB that also occur in fecal metaB
-GenStats_combined_Time_serum_fecal_comparison <- GenStats_combined_Time %>% filter(term == "timepointend") %>% filter(str_detect(compound, paste0("^(", paste0(faPeaksStatsMix$compound, collapse = "|"), ")(_|$)")))
-
-GenStats_combined_Time_serum_fecal_comparison <- GenStats_combined_Time_serum_fecal_comparison %>% rename_with(~ paste0(., "_serum")) 
-GenStats_combined_Time_serum_fecal_comparison <- GenStats_combined_Time_serum_fecal_comparison %>% mutate(matched_prefix = str_extract(compound_serum, paste(faPeaksStatsMix$compound, collapse = "|")))
-
-faPeaksStatsMix_serum_fecal_comparison <- faPeaksStatsMix %>% rename_with(~ paste0(., "_feces"))
-result_serum_fecal_comparison <- GenStats_combined_Time_serum_fecal_comparison %>% left_join(faPeaksStatsMix_serum_fecal_comparison, by = c("matched_prefix" = "compound_feces"))
-
-result_serum_fecal_comparison <- result_serum_fecal_comparison %>% mutate(Significant = case_when(
-  p.adj_serum < 0.05 & p.adj_feces < 0.05 & (estimate_serum * estimate_feces < 0) ~ "Both Significant, discrepant \nenrichment direction",
-  p.adj_serum < 0.05 & p.adj_feces < 0.05 ~ "Both Significant",
-  p.adj_serum >= 0.05 & p.adj_feces < 0.05 ~ "Feces Significant",
-  p.adj_serum < 0.05 & p.adj_feces >= 0.05 ~ "Serum Significant",
-  p.adj_serum >= 0.05 & p.adj_feces >= 0.05 ~ "Neither Significant",
-))
-
-ggplot(result_serum_fecal_comparison) +
-  theme_publication() + 
-  aes(x = estimate_serum, y = estimate_feces, color = Significant) +
-  geom_point(alpha = 0.7) +
-  #scale_color_manual(values = c("#bc3f60", "#366eb2", "yellow", "lightgrey", "black")) +
-  scale_color_manual(values = c("#0072B2", "#D55E00", "#009E73", "lightgrey", "#F0E442")) +
-  ylab("Enrichment effect size feces") +
-  xlab("Enrichment effect size serum") +
-  #geom_abline(intercept = 0, slope = 1) +
-  ggrepel::geom_text_repel(data = result_serum_fecal_comparison %>% filter(str_detect(Significant, "Both Significant") | estimate_serum > 0.4 | estimate_feces > 0.4),
-  aes(label = matched_prefix), max.overlaps = 10, size = 2.5, color = "black") +
-  xlim(-0.6, 0.6) +
-  ylim(-1.5, 1.5) +
-  geom_hline(yintercept = 0) +
-  geom_vline(xintercept = 0)
-```
-
-## Figure 4B
+## Figure 4C
 ```{r}
 heatmap_figure <- GenStats_combined_Time
 heatmap_df <- GenStats_combined_Time %>% mutate(significance_symbol = case_when(p.adj < 0.05 & p.adj >= 0.001 ~ "*", 
@@ -266,7 +233,7 @@ heatmap_metabolites <- ggplot(heatmap_df %>% filter(compound %in% metabolites_to
   theme(legend.position = "none")
 ```
 
-## Figure 4C
+## Figure 4D
 ```{r}
 genData_combined_Norm$timepoint <- gsub("baseline", "Day 0 (n=66)", genData_combined_Norm$timepoint)
 genData_combined_Norm$timepoint <- gsub("3days", "Day 3 (n=32)", genData_combined_Norm$timepoint)
@@ -336,7 +303,7 @@ IPA <- genData_combined_Norm %>%
   xlab("")
 ```
 
-## Figure 4D
+## Figure 4E
 ```{r}
 ## We should here make sure that the after fasting samples from metaG are matched to the 'end' samples of metaB
 genData_integration <- genData_combined_Norm %>% filter(timepoint == "Day 0 (n=66)" | timepoint == "Day 10 (n=66)") %>% mutate(Timepoint = case_when(timepoint == "Day 0 (n=66)" ~ "Before", timepoint == "Day 10 (n=66)" ~ "After")) 
@@ -460,8 +427,4 @@ Fig_4D <- ggplot(Fig4D_data) +
 
 ```
 
-## Figure 4E was generated by Martin, re-make this in R for the revisions so that layout is 100% identical over all the panels
-```{r}
-
-```
 
