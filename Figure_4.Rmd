@@ -247,6 +247,8 @@ genData_combined_Norm <- genData_combined_Norm %>% mutate(timepoint = factor(tim
 
 ## Select some metabolites in each direction, for the after fasting timepoint the ketone bodies should be started with and then just the strongest effect size metabolites
 
+threshold <- 0.05
+
 significance_data_metabolites <- heatmap_df %>% mutate(group1 = "Day 0 (n=66)") %>% rename("group2" = term) %>% select(compound, group1, group2, p.adj) %>% mutate(p.adj = ifelse(p.adj < threshold, format(p.adj, scientific = TRUE, digits = 2), sprintf("%.3f", p.adj))) %>% mutate(across(everything(), as.character)) %>% as.data.frame()
 
 library(ggpubr)

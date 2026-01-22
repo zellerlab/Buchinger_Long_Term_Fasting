@@ -87,7 +87,211 @@ ko_Mesnage_2023_urease_plot <- ggplot(ko_Mesnage_2023_urease %>% mutate(Abundanc
   xlab("")
 ```
 
-## Extended Data Figure 3a
+## Extended Data Figure 3
+```{r}
+## Plot longitudinal trajectories of some VCLFAs, both in serum and feces
+C24_5_570_serum <- genData_combined_Norm %>%
+  filter(compound == "C24:5_570") %>%
+  ggplot(aes(x = timepoint, y = normLogIC)) +
+  theme_publication() +
+  geom_boxplot(outlier.size = 0.4) +
+  geom_line(aes(x = timepoint, y = normLogIC, group = Study_Patient), alpha = 0.15) +
+  labs(x = "", y = "", title = "C24:5_570 serum") +
+  annotate("rect", xmin=1.5, xmax=3.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  stat_pvalue_manual(significance_data_metabolites %>% filter(compound == "C24:5_570" & group2 == "Day 10 (n=66)"), x = "group2", y.position = 1.55, label = "p.adj", color = "black", size = 3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(plot.title = element_text(size = 8)) +
+  xlab("")
+
+C24_6_571_serum <- genData_combined_Norm %>%
+  filter(compound == "C24:6_571") %>%
+  ggplot(aes(x = timepoint, y = normLogIC)) +
+  theme_publication() +
+  geom_boxplot(outlier.size = 0.4) +
+  geom_line(aes(x = timepoint, y = normLogIC, group = Study_Patient), alpha = 0.15) +
+  labs(x = "", y = "", title = "C24:6_571 serum") +
+  annotate("rect", xmin=1.5, xmax=3.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  stat_pvalue_manual(significance_data_metabolites %>% filter(compound == "C24:6_571" & group2 == "Day 10 (n=66)"), x = "group2", y.position = 1.55, label = "p.adj", color = "black", size = 3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(plot.title = element_text(size = 8)) +
+  xlab("")
+
+C24_6_183_serum <- genData_combined_Norm %>%
+  filter(compound == "C24:6_183") %>%
+  ggplot(aes(x = timepoint, y = normLogIC)) +
+  theme_publication() +
+  geom_boxplot(outlier.size = 0.4) +
+  geom_line(aes(x = timepoint, y = normLogIC, group = Study_Patient), alpha = 0.15) +
+  labs(x = "", y = "", title = "C24:6_183 serum") +
+  annotate("rect", xmin=1.5, xmax=3.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  stat_pvalue_manual(significance_data_metabolites %>% filter(compound == "C24:6_183" & group2 == "Day 10 (n=66)"), x = "group2", y.position = 1.55, label = "p.adj", color = "black", size = 3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(plot.title = element_text(size = 8)) +
+  xlab("")
+
+C22_5_181_serum <- genData_combined_Norm %>%
+  filter(compound == "C22:5_181") %>%
+  ggplot(aes(x = timepoint, y = normLogIC)) +
+  theme_publication() +
+  geom_boxplot(outlier.size = 0.4) +
+  geom_line(aes(x = timepoint, y = normLogIC, group = Study_Patient), alpha = 0.15) +
+  labs(x = "", y = "", title = "C22:5_181 serum") +
+  annotate("rect", xmin=1.5, xmax=3.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  stat_pvalue_manual(significance_data_metabolites %>% filter(compound == "C22:5_181" & group2 == "Day 10 (n=66)"), x = "group2", y.position = 1.55, label = "p.adj", color = "black", size = 3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(plot.title = element_text(size = 8)) +
+  xlab("")
+
+C22_5_567_serum <- genData_combined_Norm %>%
+  filter(compound == "C22:5_567") %>%
+  ggplot(aes(x = timepoint, y = normLogIC)) +
+  theme_publication() +
+  geom_boxplot(outlier.size = 0.4) +
+  geom_line(aes(x = timepoint, y = normLogIC, group = Study_Patient), alpha = 0.15) +
+  labs(x = "", y = "", title = "C22:5_567 serum") +
+  annotate("rect", xmin=1.5, xmax=3.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  stat_pvalue_manual(significance_data_metabolites %>% filter(compound == "C22:5_567" & group2 == "Day 10 (n=66)"), x = "group2", y.position = 1.55, label = "p.adj", color = "black", size = 3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(plot.title = element_text(size = 8)) +
+  xlab("")
+
+C22_4_174_serum <- genData_combined_Norm %>%
+  filter(compound == "C22:4_174") %>%
+  ggplot(aes(x = timepoint, y = normLogIC)) +
+  theme_publication() +
+  geom_boxplot(outlier.size = 0.4) +
+  geom_line(aes(x = timepoint, y = normLogIC, group = Study_Patient), alpha = 0.15) +
+  labs(x = "", y = "", title = "C22:4_174 serum") +
+  annotate("rect", xmin=1.5, xmax=3.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  stat_pvalue_manual(significance_data_metabolites %>% filter(compound == "C22:4_174" & group2 == "Day 10 (n=66)"), x = "group2", y.position = 1.55, label = "p.adj", color = "black", size = 3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(plot.title = element_text(size = 8)) +
+  xlab("")
+
+C22_4_559_serum <- genData_combined_Norm %>%
+  filter(compound == "C22:4_559") %>%
+  ggplot(aes(x = timepoint, y = normLogIC)) +
+  theme_publication() +
+  geom_boxplot(outlier.size = 0.4) +
+  geom_line(aes(x = timepoint, y = normLogIC, group = Study_Patient), alpha = 0.15) +
+  labs(x = "", y = "", title = "C22:4_559 serum") +
+  annotate("rect", xmin=1.5, xmax=3.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  stat_pvalue_manual(significance_data_metabolites %>% filter(compound == "C22:4_559" & group2 == "Day 10 (n=66)"), x = "group2", y.position = 1.55, label = "p.adj", color = "black", size = 3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(plot.title = element_text(size = 8)) +
+  xlab("")
+```
+
+## Now go for feces
+```{r}
+significance_data_metabolites_feces <- volcano_plot_figure_df_feces %>% mutate(group1 = "Day0") %>% mutate(group2 = "Day10") %>% select(compound, group1, group2, p.adj) %>% mutate(p.adj = ifelse(p.adj < 0.001, format(p.adj, scientific = TRUE, digits = 2), sprintf("%.3f", p.adj))) %>% mutate(across(everything(), as.character)) %>% as.data.frame()
+
+## Build dummy timepoinst for visualization purposes.
+all_timepoints <- c("pre", "post", "Day3", "Day13", "Day30")
+full_grid <- faPeaks %>% ungroup() %>% mutate(timepoint = as.character(timepoint)) %>% distinct(patientId, compound) %>% expand_grid(timepoint = all_timepoints) %>% filter(timepoint == "Day3" | timepoint == "Day13" | timepoint == "Day30")
+faPeaks_dummy <- bind_rows(full_grid, faPeaks) %>% mutate(timepoint = recode(timepoint, "pre" = "Day0", "post" = "Day10")) %>% mutate(timepoint = factor(timepoint, levels = c("Day0", "Day3", "Day10", "Day13", "Day30"))) %>% mutate(is_dummy = timepoint %in% c("Day3", "Day13", "Day30"))
+
+
+C24_5_feces <- faPeaks_dummy %>% 
+  filter(compound == "C24:5") %>%
+  ggplot(aes(x = timepoint, y = normLogIC)) +
+  theme_publication() +
+  geom_boxplot(outlier.size = 0.4) +
+  geom_line(data = faPeaks_dummy %>% filter(is_dummy == "FALSE") %>% filter(compound == "C24:5"), aes(x = timepoint, y = normLogIC, group = patientId), alpha = 0.15) +
+  labs(x = "", y = "", title = "C24:5 feces") +
+  annotate("rect", xmin=1.5, xmax=3.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  stat_pvalue_manual(significance_data_metabolites_feces %>% filter(compound == "C24:5"), x = "group2", y.position = 1.55, label = "p.adj", color = "black", size = 3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(plot.title = element_text(size = 8)) +
+  xlab("")
+
+C24_6_feces <- faPeaks_dummy %>%
+  filter(compound == "C24:6") %>%
+  ggplot(aes(x = timepoint, y = normLogIC)) +
+  theme_publication() +
+  geom_boxplot(outlier.size = 0.4) +
+  geom_line(data = faPeaks_dummy %>% filter(is_dummy == "FALSE") %>% filter(compound == "C24:6"), aes(x = timepoint, y = normLogIC, group = patientId), alpha = 0.15) +
+  labs(x = "", y = "", title = "C24:6 feces") +
+  annotate("rect", xmin=1.5, xmax=3.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  stat_pvalue_manual(significance_data_metabolites_feces %>% filter(compound == "C24:6"), x = "group2", y.position = 1.55, label = "p.adj", color = "black", size = 3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(plot.title = element_text(size = 8)) +
+  xlab("")
+
+C22_4_feces <- faPeaks_dummy %>%
+  filter(compound == "C22:4") %>%
+  ggplot(aes(x = timepoint, y = normLogIC)) +
+  theme_publication() +
+  geom_boxplot(outlier.size = 0.4) +
+  geom_line(data = faPeaks_dummy %>% filter(is_dummy == "FALSE") %>% filter(compound == "C22:4"), aes(x = timepoint, y = normLogIC, group = patientId), alpha = 0.15) +
+  labs(x = "", y = "", title = "C22:4 feces") +
+  annotate("rect", xmin=1.5, xmax=3.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  stat_pvalue_manual(significance_data_metabolites_feces %>% filter(compound == "C22:4"), x = "group2", y.position = 1.55, label = "p.adj", color = "black", size = 3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(plot.title = element_text(size = 8)) +
+  xlab("")
+
+C22_5_feces <- faPeaks_dummy %>%
+  filter(compound == "C22:5") %>%
+  ggplot(aes(x = timepoint, y = normLogIC)) +
+  theme_publication() +
+  geom_boxplot(outlier.size = 0.4) +
+  geom_line(data = faPeaks_dummy %>% filter(is_dummy == "FALSE") %>% filter(compound == "C22:5"), aes(x = timepoint, y = normLogIC, group = patientId), alpha = 0.15) +
+  labs(x = "", y = "", title = "C22:5 feces") +
+  annotate("rect", xmin=1.5, xmax=3.5, ymin=-Inf, ymax=Inf, alpha=0.2, fill="gray") +
+  stat_pvalue_manual(significance_data_metabolites_feces %>% filter(compound == "C22:5"), x = "group2", y.position = 1.55, label = "p.adj", color = "black", size = 3) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  theme(plot.title = element_text(size = 8)) +
+  xlab("")
+
+## Now combine some plots with patchwork
+
+combined_plot_vlcfas <- C22_4_559_serum + C22_5_567_serum + C24_5_570_serum + C24_6_571_serum + C22_4_feces + C22_5_feces + C24_5_feces + C24_6_feces + plot_layout(ncol = 4, nrow = 2)
+
+ggsave("Extended_Data_Fig3A_vlcfas.pdf", combined_plot_vlcfas, unit = "mm", width = 180, height = 150)
+```
+
+## Additional heatmaps of the FAs, both for serum and feces
+```{r}
+## To capture free FAs
+heatmap_fas_serum <- ggplot(heatmap_df %>% filter(str_detect(compound, "^C\\d{2}"))) +
+  aes(x = term, y = compound, fill = estimate) +
+  theme_publication() +
+  geom_tile() +
+  scale_fill_gradient2(low = "#366eb2", mid = "white", high="#bc3f60", limits=c(-1, 1), name = "Estimate") + 
+  geom_text(aes(label = significance_symbol), vjust = 0.75) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  xlab("") + 
+  ylab("") +
+  labs(title = "Fatty acids serum metabolomics") #+
+  #theme(legend.position = "none")
+
+heatmap_df_fas_feces <- faPeaksStatsMix %>% mutate(significance_symbol = case_when(p.adj < 0.05 & p.adj >= 0.001 ~ "*", 
+                                                                      p.adj < 0.001 & p.adj >= 0.0001 ~ "**",
+                                                                      p.adj < 0.0001 ~ "***"))
+
+heatmap_fas_feces <- ggplot(heatmap_df_fas_feces %>% filter(str_detect(compound, "^C\\d{2}"))) +
+  aes(x = term, y = compound, fill = estimate) +
+  theme_publication() +
+  geom_tile() +
+  scale_fill_gradient2(low = "#366eb2", mid = "white", high="#bc3f60", limits=c(-1, 1.5), name = "Estimate") + 
+  geom_text(aes(label = significance_symbol), vjust = 0.75) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  xlab("") + 
+  ylab("") +
+  labs(title = "Fatty acids fecal metabolomics") #+
+  #theme(legend.position = "none")
+
+
+combined_heatmaps_fas <- heatmap_fas_serum + heatmap_fas_feces + plot_layout(ncol = 2, widths = c(4,1))
+ggsave("C:/Users/qrducarmon/Downloads/combined_heatmaps_fas.pdf", combined_heatmaps_fas, unit = "mm", width = 140, height = 130)
+
+```
+```
+
+
+
+## Extended Data Figure 4a
 ```{r}
 ref_motus_mapping <- read_delim(here("Other_Required_Data","db_mOTU_taxonomy_meta-mOTUs.tsv"), col_names = TRUE) 
 meta_motus_mapping <- read_delim(here("Other_Required_Data","db_mOTU_taxonomy_ref-mOTUs.tsv"), col_names = TRUE)
@@ -196,7 +400,7 @@ Extended_Data_Fig3a <- ggplot(data = ipa_producers_combined_data, aes(x = factor
     theme(axis.title.x=element_blank(), axis.text.x=element_blank(), axis.ticks.x=element_blank())
 ```
 
-## Extended Data Figure 3b
+## Extended Data Figure 4b
 ```{r}
 Zeevi_2015_mOTUs_sums_sample <- as.data.frame(colSums(mOTU_profiles_Zeevi_2015_combined)) %>% rownames_to_column("Sample") 
 
@@ -350,7 +554,7 @@ Combined_Fig3 <- Extended_Data_Fig3a + Extended_Data_Fig3b + plot_layout(ncol = 
 ## Still have to play a bit with the layout and check that the 01616 is replaced by sporogenes / botulinum
 ```
 
-## Extended Data Figure 4a
+## Extended Data Figure 5a
 ```{r}
 ## Quantile plots of the 4 Oscillibacters of interest and their relative abundance in our own study over time.
 
@@ -388,7 +592,7 @@ Extended_Data_Fig4a <- ggplot(data = Mesnage_2023_all_long, aes(x = factor(Speci
 
 ```
 
-## Extended Data Figure 4b
+## Extended Data Figure 5b
 ```{r}
 joined_metaG_metaB_abundances <- Mesnage_2023_tax_ps_rel_abun_before_after_integration_long_log10 %>% select(OTU, Abundance, Participant_Timepoint) %>% left_join(genData_integration_wide, by = "Participant_Timepoint")
 joined_metaG_metaB_abundances$Timepoint <- joined_metaG_metaB_abundances$Participant_Timepoint
