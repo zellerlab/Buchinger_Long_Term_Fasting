@@ -114,7 +114,7 @@ regressionFxnMix <- function(dat){
 
 faPeaksStatsMix <- faPeaks %>% nest(statData = -compound) %>% mutate(df = purrr::map(statData, regressionFxnMix)) %>% unnest_legacy(df) %>% filter(term != "(Intercept)", effect == "fixed") %>% mutate(p.adj = p.adjust(p.value, method = "fdr")) 
 
-DT::datatable(faPeaksStatsMix)
+write_xlsx(faPeaksStatsMix %>% select(compound, term, estimate, p.value, p.adj) %>% arrange(desc(estimate)) %>% rename("Compound" = compound, "Timepoint" = term, "LMM estimate" = estimate, "p.val" = p.value), here("Supplementary_Tables","TableS10.xlsx"))
 
 faSigList <- faPeaksStatsMix %>% 
   arrange(-statistic) %>% 

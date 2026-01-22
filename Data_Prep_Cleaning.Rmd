@@ -549,6 +549,20 @@ faPeaks <- faPeaks %>%
 faPeaks$timepoint <- factor(faPeaks$timepoint, levels = c("pre", "post"))
 
 faPeaks <- faPeaks %>% mutate(ticNormIC = IC/normFactor)
+
+## To have it corresponding to table S7, post is "end"
+Table_S8 <- faPeaks 
+Table_S8 <- Table_S8 %>% mutate(timepoint = recode(timepoint, pre  = "baseline", post = "end"))
+Table_S8$Study_Patient_Timepoint <- paste("GEN", Table_S8$patientId, Table_S8$timepoint, sep = "_")
+
+## In order to have all the metabolites have a unique name
+Table_S8 <- Table_S8 %>%
+  group_by(Study_Patient_Timepoint) %>%
+  mutate(compound = make.unique(as.character(compound))) %>%
+  ungroup()
+
+Table_S8 <- Table_S8 %>% select(compound, normLogIC, Study_Patient_Timepoint) %>% pivot_wider(names_from = compound, values_from = normLogIC) %>% as.data.frame()
+#write_xlsx(Table_S8, here("Supplementary_Tables","Table_S8.xlsx"))
 ```
 
 
